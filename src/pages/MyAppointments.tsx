@@ -14,12 +14,13 @@ export function MyAppointmentsPage() {
   const db = useMockDb()
   const session = useSession()
 
+  const isCustomer = session?.role === 'customer'
   const bookings = useAsync(
     () =>
-      session
+      isCustomer
         ? listMyBookings()
         : Promise.resolve({ upcoming: [] as Appointment[], past: [] as Appointment[] }),
-    [session?.id],
+    [isCustomer, session?.id],
   )
 
   const [pendingCancel, setPendingCancel] = useState<Appointment | null>(null)
@@ -46,6 +47,33 @@ export function MyAppointmentsPage() {
           >
             Guests can book without an account. The cancellation link in the
             request email is all you need to manage that booking.
+          </StateBlock>
+        </Card>
+      </div>
+    )
+  }
+
+  if (session.role !== 'customer') {
+    return (
+      <div className="container main--narrow">
+        <Card>
+          <StateBlock
+            icon="→"
+            title="Customer appointments live in a customer account"
+            actions={
+              <>
+                <Link className={buttonClassName('primary')} to="/staff">
+                  Open the staff workspace
+                </Link>
+                <Link className={buttonClassName('secondary')} to="/">
+                  Back to the public site
+                </Link>
+              </>
+            }
+          >
+            You are signed in as a staff member. Staff accounts cannot book or
+            manage customer appointments. Sign out first, then sign in with a
+            customer account or book as a guest.
           </StateBlock>
         </Card>
       </div>

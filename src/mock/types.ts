@@ -43,6 +43,9 @@ export interface TimeOff {
 export interface StaffMember {
   id: string
   name: string
+  email: string
+  /** Demo-only plaintext credential. Never store passwords like this in production. */
+  password: string
   isActive: boolean
   intervals: WorkingInterval[]
   timeOff: TimeOff[]
@@ -53,6 +56,12 @@ export interface Customer {
   name: string
   email: string
   password: string
+}
+
+/** Mock session shape. The real Worker stores an opaque server-side session. */
+export interface MockSession {
+  role: Role
+  id: string
 }
 
 export interface Appointment {

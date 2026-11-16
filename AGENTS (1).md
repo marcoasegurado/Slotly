@@ -44,6 +44,7 @@ If a task crosses multiple areas, read each relevant document—not all document
 
 - **Product:** Slotly is a generic appointment-booking application for one small business/organization per installation. It is not a multi-tenant SaaS product.
 - **Stack:** React + TypeScript, Vite, Cloudflare Workers with Hono, and Cloudflare D1 (SQLite). Use Cloudflare's current supported React/Vite/Workers layout.
+- **Deployment target:** The project owner will deploy the production app on Cloudflare. The intended shape is a Vite client served through Cloudflare Workers static assets, a Hono API on Workers, and Cloudflare D1 for persistence. Deployment is a Phase 10 activity and still requires explicit approval before creating resources or publishing. Do not deploy the in-memory mock as production.
 - **Roles:** Customer, Staff and Admin. Customers may book as guests or sign in. Only Admin has business-wide management access.
 - **Customer authentication:** Email and password only; no social login. Public registration creates Customer accounts only.
 - **Staff accounts:** Admin creates staff accounts. Admin-generated temporary passwords are displayed once for out-of-band delivery; staff must set a new password at first login. If forgotten, only Admin can issue another temporary password. No public staff registration or self-service password reset in the MVP.
@@ -93,7 +94,7 @@ Do not skip phases or move to a later major phase until the current phase's acce
 | 7 | Staff approval, rejection, rescheduling and admin reassignment |
 | 8 | Transactional email notifications |
 | 9 | Admin dashboard, reports and CSV export |
-| 10 | Quality, accessibility and deployment preparation |
+| 10 | Quality, accessibility and Cloudflare deployment preparation |
 
 Detailed schema, endpoint contracts and test cases are in the on-demand docs—not in this roadmap.
 
@@ -102,9 +103,13 @@ Detailed schema, endpoint contracts and test cases are in the on-demand docs—n
 - **Phase 0:** Repository/scaffold state has not been verified in this handoff. Inspect the actual repository before marking complete.
 - **Phase 1:** Product requirements and role journeys are recorded here; separate `PRODUCT_SPEC.md` and `USER_FLOWS.md` deliverables still need verification/creation if the project uses them.
 - **Phase 2:** Broad Figma design pass exists across Customer Booking, Staff & Admin and UI States. This revision adds the missing cancellation, decline, reschedule/reassignment, token/security, responsive and design-token references. **Awaiting user review/approval.**
+- **Mock UI vertical slice (verified 16 November 2026):** The React/Vite app runs against an in-memory mock repository. Customer booking, guest cancellation, customer sign-in/history and a staff workspace are implemented. The staff workspace includes role-aware sign-in, dashboard, assigned queue, appointment review, approve/reject/cancel, reschedule within the staff member's own schedule, and weekly hours/time-off editing with conflict blocking. `npm run typecheck` and `npm run build` pass; headless mock-API integration checks passed for ownership, approval revalidation, schedule conflicts, rescheduling, customer booking and guest cancellation. This is a UI contract slice, not Phase 3/4 backend work: no Hono routes, D1 schema, secure sessions, password hashing or email delivery exist yet.
 - **Phase 3:** Not started / not verified. No database implementation is authorized by this documentation update.
-- **Phases 4–10:** Not started.
-- **Implementation boundary:** This handoff changes project guidance and Figma design references only. It does not claim React, Worker, D1 or email functionality has been implemented.
+- **Phases 4–10:** Not started in the production stack.
+- **Deferred in the mock UI:** Admin workspace and reassignment, admin-issued temporary staff passwords/forced password change, service/staff management, settings, reports/CSV and the email outbox.
+- **Next task:** Build the mock admin workspace slice (admin sign-in, business-wide queue, reassignment) or begin the Phase 3 D1 schema and backend foundation, depending on user priority.
+- **Deployment:** The production target is confirmed as Cloudflare (Workers + D1). No Cloudflare resources have been created, no billing has been enabled and no deployment has been performed. Deployment remains Phase 10 work after the backend and quality phases, with explicit approval.
+- **Implementation boundary:** This handoff does not claim a deployable Worker, database or email implementation. The mock uses plaintext demo credentials and in-memory data that resets on reload.
 
 Update this section whenever a phase changes. Record only work that was inspected and verified; include the next task and any blockers.
 

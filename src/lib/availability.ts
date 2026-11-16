@@ -13,6 +13,8 @@ import type {
   Service,
   Slot,
   StaffMember,
+  TimeOff,
+  WorkingInterval,
 } from '../mock/types'
 
 export const SLOT_STEP_MINUTES = 15
@@ -27,12 +29,27 @@ export function overlaps(aStart: number, aEnd: number, bStart: number, bEnd: num
   return aStart < bEnd && aEnd > bStart
 }
 
-function worksAt(staff: StaffMember, weekday: number, startMinute: number, endMinute: number) {
-  return staff.intervals.some(
+export function fitsIntervals(
+  intervals: WorkingInterval[],
+  weekday: number,
+  startMinute: number,
+  endMinute: number,
+): boolean {
+  return intervals.some(
     (interval) =>
       interval.weekday === weekday &&
       interval.startMinute <= startMinute &&
       interval.endMinute >= endMinute,
+  )
+}
+
+function worksAt(staff: StaffMember, weekday: number, startMinute: number, endMinute: number) {
+  return fitsIntervals(staff.intervals, weekday, startMinute, endMinute)
+}
+
+export function overlapsTimeOff(timeOff: TimeOff[], start: number, end: number): boolean {
+  return timeOff.some((entry) =>
+    overlaps(start, end, Date.parse(entry.startAt), Date.parse(entry.endAt)),
   )
 }
 
@@ -41,9 +58,7 @@ function hasTimeOff(
   start: number,
   end: number,
 ): boolean {
-  return staff.timeOff.some((timeOff) =>
-    overlaps(start, end, Date.parse(timeOff.startAt), Date.parse(timeOff.endAt)),
-  )
+  return overlapsTimeOff(staff.timeOff, start, end)
 }
 
 function hasConfirmedConflict(
@@ -51,9 +66,11 @@ function hasConfirmedConflict(
   staffId: string,
   start: number,
   end: number,
+  excludeAppointmentId?: string,
 ): boolean {
   return appointments.some(
     (appointment) =>
+      appointment.id !== excludeAppointmentId &&
       appointment.assignedStaffUserId === staffId &&
       appointment.status === 'confirmed' &&
       overlaps(start, end, Date.parse(appointment.startAt), Date.parse(appointment.endAt)),
@@ -249,4 +266,196 @@ export function validateSlot(
   if (!staffId) return null
 
   return { startAt: start.toISOString(), endAt: end.toISOString(), staffId }
+}
+
+/**
+ * Validates a slot for one specific staff member without ever selecting a
+ * different person. Used by staff approval and rescheduling.
+ */
+export function validateStaffSlotForDuration(
+  context: AvailabilityContext,
+  staff: StaffMember,
+  startAtIso: string,
+  durationMinutes: number,
+  now: Date = new Date(),
+  excludeAppointmentId?: string,
+): Slot | null {
+  if (!staff.isActive) return null
+
+  const { business } = context
+  const parsed = Date.parse(startAtIso)
+  if (!Number.isFinite(parsed)) return null
+
+  const dateKey = todayDateKeyOfIso(startAtIso, business.timezone)
+  const startMinute = minutesOfDay(new Date(parsed), business.timezone)
+  const endMinute = startMinute + durationMinutes
+  if (endMinute > 1440) return null
+
+  const weekday = weekdayOfDateKey(dateKey)
+  if (!worksAt(staff, weekday, startMinute, endMinute)) return null
+
+  const start = zonedTimeToUtc(dateKey, startMinute, business.timezone)
+  const end = zonedTimeToUtc(dateKey, endMinute, business.timezone)
+
+  if (start.getTime() <= now.getTime()) return null
+  if (hasTimeOff(staff, start.getTime(), end.getTime())) return null
+  if (
+    hasConfirmedConflict(
+      context.appointments,
+      staff.id,
+      start.getTime(),
+      end.getTime(),
+      excludeAppointmentId,
+    )
+  ) {
+    return null
+  }
+
+  return { startAt: start.toISOString(), endAt: end.toISOString(), staffId: staff.id }
+}
+
+/** Availability for one staff member, used by the staff reschedule screen. */
+export function getStaffDayAvailability(
+  context: AvailabilityContext,
+  staff: StaffMember,
+  durationMinutes: number,
+  dateKey: string,
+  now: Date = new Date(),
+  excludeAppointmentId?: string,
+): DayAvailability {
+  const { business } = context
+
+  if (!staff.isActive) return { dateKey, state: 'closed', slots: [] }
+
+  const today = todayDateKey(business.timezone, now)
+  const offset = daysBetweenDateKeys(today, dateKey)
+  if (offset < 0) return { dateKey, state: 'past', slots: [] }
+  if (offset > business.maxAdvanceBookingDays) {
+    return { dateKey, state: 'outside-booking-window', slots: [] }
+  }
+
+  const weekday = weekdayOfDateKey(dateKey)
+  if (!staff.intervals.some((interval) => interval.weekday === weekday)) {
+    return { dateKey, state: 'closed', slots: [] }
+  }
+
+  const slots: Slot[] = []
+  const nowMs = now.getTime()
+
+  for (
+    let startMinute = 0;
+    startMinute + durationMinutes <= 1440;
+    startMinute += SLOT_STEP_MINUTES
+  ) {
+    const endMinute = startMinute + durationMinutes
+    if (!worksAt(staff, weekday, startMinute, endMinute)) continue
+
+    const start = zonedTimeToUtc(dateKey, startMinute, business.timezone)
+    const end = zonedTimeToUtc(dateKey, endMinute, business.timezone)
+
+    if (start.getTime() <= nowMs) continue
+    if (hasTimeOff(staff, start.getTime(), end.getTime())) continue
+    if (
+      hasConfirmedConflict(
+        context.appointments,
+        staff.id,
+        start.getTime(),
+        end.getTime(),
+        excludeAppointmentId,
+      )
+    ) {
+      continue
+    }
+
+    slots.push({
+      startAt: start.toISOString(),
+      endAt: end.toISOString(),
+      staffId: staff.id,
+    })
+  }
+
+  return {
+    dateKey,
+    state: slots.length > 0 ? 'open' : 'full',
+    slots,
+  }
+}
+
+export function findNextStaffAvailableDates(
+  context: AvailabilityContext,
+  staff: StaffMember,
+  durationMinutes: number,
+  fromDateKey: string,
+  count: number,
+  now: Date = new Date(),
+  excludeAppointmentId?: string,
+): string[] {
+  const results: string[] = []
+  for (
+    let offset = 0;
+    offset <= context.business.maxAdvanceBookingDays && results.length < count;
+    offset += 1
+  ) {
+    const dateKey = addDaysToDateKey(fromDateKey, offset)
+    const availability = getStaffDayAvailability(
+      context,
+      staff,
+      durationMinutes,
+      dateKey,
+      now,
+      excludeAppointmentId,
+    )
+    if (availability.state === 'open') results.push(dateKey)
+  }
+  return results
+}
+
+export interface ScheduleProposal {
+  intervals?: WorkingInterval[]
+  timeOff?: TimeOff[]
+}
+
+/**
+ * Finds future pending/confirmed appointments that a proposed schedule or
+ * time-off change would invalidate. The caller must not apply the change while
+ * this returns rows.
+ */
+export function findScheduleConflicts(
+  context: AvailabilityContext,
+  staff: StaffMember,
+  proposal: ScheduleProposal,
+  now: Date = new Date(),
+): Appointment[] {
+  const intervals = proposal.intervals ?? staff.intervals
+  const timeOff = proposal.timeOff ?? staff.timeOff
+  const { business, appointments } = context
+  const nowMs = now.getTime()
+
+  return appointments
+    .filter(
+      (appointment) =>
+        appointment.assignedStaffUserId === staff.id &&
+        (appointment.status === 'pending' || appointment.status === 'confirmed') &&
+        Date.parse(appointment.startAt) > nowMs,
+    )
+    .filter((appointment) => {
+      const dateKey = todayDateKeyOfIso(appointment.startAt, business.timezone)
+      const startMinute = minutesOfDay(new Date(appointment.startAt), business.timezone)
+      const endMinute = startMinute + appointment.durationMinutesSnapshot
+      const weekday = weekdayOfDateKey(dateKey)
+
+      if (endMinute > 1440) return true
+      if (!fitsIntervals(intervals, weekday, startMinute, endMinute)) return true
+      if (
+        overlapsTimeOff(
+          timeOff,
+          Date.parse(appointment.startAt),
+          Date.parse(appointment.endAt),
+        )
+      ) {
+        return true
+      }
+      return false
+    })
+    .sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt))
 }

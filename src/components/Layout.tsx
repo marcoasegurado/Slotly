@@ -4,7 +4,7 @@ import { resetDb } from '../mock/store'
 import { useMockDb, useSession } from '../lib/hooks'
 import { Button } from './Button'
 
-function DemoBanner() {
+export function DemoBanner() {
   return (
     <div className="demo-banner" role="status">
       <div className="container demo-banner__inner">
@@ -43,10 +43,16 @@ export function SiteHeader() {
         </Link>
 
         <nav className="site-nav" aria-label="Main">
-          <NavLink to="/book" end={false}>
-            Book
-          </NavLink>
-          <NavLink to="/appointments">My appointments</NavLink>
+          {session?.role === 'staff' ? (
+            <NavLink to="/staff">Staff workspace</NavLink>
+          ) : (
+            <>
+              <NavLink to="/book" end={false}>
+                Book
+              </NavLink>
+              <NavLink to="/appointments">My appointments</NavLink>
+            </>
+          )}
           {session ? (
             <>
               <span className="meta" style={{ paddingInline: 'var(--space-2)' }}>

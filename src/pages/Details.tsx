@@ -70,7 +70,8 @@ export function DetailsPage() {
   }
 
   const businessDateKey = toDateKey(new Date(startAt), db.business.timezone)
-  const mode = session ? 'customer' : 'guest'
+  const customerSession = session?.role === 'customer' ? session : null
+  const mode = customerSession ? 'customer' : 'guest'
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -164,10 +165,10 @@ export function DetailsPage() {
                 <CardHeader title="Who is this for?" />
 
                 <div className="stack">
-                  {session ? (
+                  {customerSession ? (
                     <div className="notice notice--info">
                       <div>
-                        <div className="notice__title">Booking as {session.name}</div>
+                        <div className="notice__title">Booking as {customerSession.name}</div>
                         <p>
                           This request will appear in your appointments. Signing
                           in as someone else? Sign out first.
@@ -176,6 +177,20 @@ export function DetailsPage() {
                     </div>
                   ) : (
                     <>
+                      {session ? (
+                        <div className="notice notice--warning">
+                          <div>
+                            <div className="notice__title">
+                              You are signed in as a staff member
+                            </div>
+                            <p>
+                              Staff accounts do not create customer appointments.
+                              This request will be sent as a guest booking under
+                              the name and email below.
+                            </p>
+                          </div>
+                        </div>
+                      ) : null}
                       <div className="notice notice--info">
                         <div>
                           <div className="notice__title">Booking as a guest</div>

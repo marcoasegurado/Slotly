@@ -21,5 +21,8 @@ export function subscribe(listener: () => void): () => void {
 }
 
 export function emit(): void {
+  // Publish a new top-level snapshot so useSyncExternalStore subscribers
+  // re-render after in-place mutations.
+  database = { ...database }
   for (const listener of listeners) listener()
 }

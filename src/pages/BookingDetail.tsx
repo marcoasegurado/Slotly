@@ -28,7 +28,8 @@ export function BookingDetailPage() {
   const appointment = db.appointments.find((entry) => entry.id === id)
   const owned =
     appointment !== undefined &&
-    (session === null || appointment.customerUserId === session.id || appointment.customerUserId === null)
+    session?.role === 'customer' &&
+    appointment.customerUserId === session.id
 
   if (!appointment || !owned) {
     return (

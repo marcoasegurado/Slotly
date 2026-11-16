@@ -3,6 +3,7 @@ import type {
   Business,
   Customer,
   GuestCancellationToken,
+  MockSession,
   Service,
   StaffMember,
 } from './types'
@@ -20,7 +21,7 @@ export interface MockDatabase {
   customers: Customer[]
   appointments: Appointment[]
   cancellationTokens: GuestCancellationToken[]
-  sessionCustomerId: string | null
+  session: MockSession | null
 }
 
 export function newId(prefix: string): string {
@@ -121,6 +122,8 @@ export function createSeedDatabase(now: Date = new Date()): MockDatabase {
     {
       id: 'stf_ana',
       name: 'Ana Reyes',
+      email: 'ana@slotly.studio',
+      password: 'slotly-demo',
       isActive: true,
       intervals: [
         { weekday: WEEKDAYS.monday, startMinute: at(9), endMinute: at(17) },
@@ -134,6 +137,8 @@ export function createSeedDatabase(now: Date = new Date()): MockDatabase {
     {
       id: 'stf_ben',
       name: 'Ben Cruz',
+      email: 'ben@slotly.studio',
+      password: 'slotly-demo',
       isActive: true,
       intervals: [
         { weekday: WEEKDAYS.tuesday, startMinute: at(10), endMinute: at(18) },
@@ -147,6 +152,8 @@ export function createSeedDatabase(now: Date = new Date()): MockDatabase {
     {
       id: 'stf_ciel',
       name: 'Ciel Santos',
+      email: 'ciel@slotly.studio',
+      password: 'slotly-demo',
       isActive: true,
       intervals: [
         { weekday: WEEKDAYS.monday, startMinute: at(8), endMinute: at(12) },
@@ -199,9 +206,12 @@ export function createSeedDatabase(now: Date = new Date()): MockDatabase {
     },
   ]
 
+  // Use a Tuesday–Friday slot that is not Ana's day off. Both Ana and Ben work
+  // these weekdays, so the seeded confirmed bookings stay inside staff hours
+  // regardless of which day the demo is opened.
   const firstOpenDay = nextDateKeyWhere(addDaysToDateKey(today, 1), (dateKey) => {
     const weekday = weekdayOfDateKey(dateKey)
-    return weekday >= 1 && weekday <= 6
+    return weekday >= 2 && weekday <= 5 && dateKey !== anaDayOff
   })
 
   const appointments: Appointment[] = []
@@ -265,7 +275,7 @@ export function createSeedDatabase(now: Date = new Date()): MockDatabase {
   // cancellation screens can be reviewed at any time.
   const pendingDay = nextDateKeyWhere(addDaysToDateKey(firstOpenDay, 1), (dateKey) => {
     const weekday = weekdayOfDateKey(dateKey)
-    return weekday >= 1 && weekday <= 6
+    return weekday >= 2 && weekday <= 5 && dateKey !== anaDayOff
   })
   const pendingStart = zonedTimeToUtc(pendingDay, at(11), timezone)
   const pendingEnd = zonedTimeToUtc(pendingDay, at(12), timezone)
@@ -332,6 +342,6 @@ export function createSeedDatabase(now: Date = new Date()): MockDatabase {
     customers,
     appointments,
     cancellationTokens,
-    sessionCustomerId: null,
+    session: null,
   }
 }

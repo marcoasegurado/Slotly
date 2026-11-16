@@ -1,19 +1,36 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { login, loginWithDemoAccount, register } from '../mock/api'
+import {
+  login,
+  loginWithDemoAccount,
+  loginWithDemoStaffAccount,
+  register,
+} from '../mock/api'
 import { errorMessage, useDocumentTitle } from '../lib/hooks'
 import { Button, buttonClassName } from '../components/Button'
 import { Card } from '../components/Card'
 import { TextField } from '../components/Field'
+import type { Role } from '../mock/types'
 
 type Mode = 'signin' | 'register'
+
+/** Keeps post-sign-in navigation inside the workspace that belongs to the role. */
+function landingPath(role: Role, next: string | null): string {
+  if (role === 'staff') {
+    return next?.startsWith('/staff') ? next : '/staff'
+  }
+  if (role === 'admin') {
+    return next ?? '/'
+  }
+  return next && !next.startsWith('/staff') ? next : '/appointments'
+}
 
 export function SignInPage() {
   useDocumentTitle('Sign in')
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const next = searchParams.get('next') || '/appointments'
+  const next = searchParams.get('next')
 
   const [mode, setMode] = useState<Mode>('signin')
   const [name, setName] = useState('')
@@ -28,12 +45,12 @@ export function SignInPage() {
     setBusy(true)
     setError(null)
     try {
-      if (mode === 'register') {
-        await register({ name, email, password })
-      } else {
-        await login(email, password)
-      }
-      navigate(next, { replace: true })
+      const user =
+        mode === 'register'
+          ? await register({ name, email, password })
+          : await login(email, password)
+      const target = landingPath(user.role, next)
+      navigate(target, { replace: true })
     } catch (cause) {
       setError(errorMessage(cause))
     } finally {
@@ -107,7 +124,7 @@ export function SignInPage() {
               hint={
                 mode === 'register'
                   ? 'At least 8 characters.'
-                  : 'Staff accounts sign in here too, then set a new password in the staff workspace.'
+                  : 'Customer and staff accounts both sign in here.'
               }
               value={password}
               onChange={(event) => setPassword(event.target.value)}
@@ -136,8 +153,9 @@ export function SignInPage() {
           <div className="stack stack--tight">
             <span className="eyebrow">Demo</span>
             <p className="text-sm secondary">
-              Sample customer: maria@example.com with the password
-              slotly-demo. No real account is created.
+              Customer: maria@example.com · slotly-demo
+              <br />
+              Staff: ana@slotly.studio · slotly-demo
             </p>
             <div className="row row--wrap">
               <Button
@@ -145,11 +163,28 @@ export function SignInPage() {
                 size="sm"
                 onClick={() => {
                   void loginWithDemoAccount()
-                    .then(() => navigate(next, { replace: true }))
+                    .then((user) =>
+                      navigate(landingPath(user.role, next), {
+                        replace: true,
+                      }),
+                    )
                     .catch((cause: unknown) => setError(errorMessage(cause)))
                 }}
               >
-                Use the sample account
+                Use the sample customer
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  void loginWithDemoStaffAccount()
+                    .then((user) =>
+                      navigate(landingPath(user.role, next), { replace: true }),
+                    )
+                    .catch((cause: unknown) => setError(errorMessage(cause)))
+                }}
+              >
+                Use the sample staff account
               </Button>
               <Link className={buttonClassName('ghost', 'btn--sm')} to="/book">
                 Book without an account

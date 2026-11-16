@@ -11,6 +11,13 @@ import { MyAppointmentsPage } from './pages/MyAppointments'
 import { BookingDetailPage } from './pages/BookingDetail'
 import { GuestCancelPage } from './pages/GuestCancel'
 import { NotFoundPage } from './pages/NotFound'
+import { RequireStaff } from './components/RequireStaff'
+import { WorkspaceLayout } from './components/WorkspaceLayout'
+import { StaffDashboardPage } from './pages/staff/StaffDashboard'
+import { StaffAppointmentsPage } from './pages/staff/StaffAppointments'
+import { StaffAppointmentDetailPage } from './pages/staff/StaffAppointmentDetail'
+import { StaffReschedulePage } from './pages/staff/StaffReschedule'
+import { StaffAvailabilityPage } from './pages/staff/StaffAvailability'
 
 function ScrollToTop() {
   const { pathname, search } = useLocation()
@@ -36,6 +43,25 @@ export function App() {
           <Route path="/appointments/:id" element={<BookingDetailPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
+
+        <Route
+          path="/staff"
+          element={
+            <RequireStaff>
+              <WorkspaceLayout />
+            </RequireStaff>
+          }
+        >
+          <Route index element={<StaffDashboardPage />} />
+          <Route path="appointments" element={<StaffAppointmentsPage />} />
+          <Route path="appointments/:id" element={<StaffAppointmentDetailPage />} />
+          <Route
+            path="appointments/:id/reschedule"
+            element={<StaffReschedulePage />}
+          />
+          <Route path="availability" element={<StaffAvailabilityPage />} />
+        </Route>
+
         <Route path="/cancel/:token" element={<GuestCancelPage />} />
       </Routes>
     </BrowserRouter>

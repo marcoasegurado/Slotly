@@ -255,6 +255,19 @@ export function formatMinutesOfDay(minutes: number): string {
   return `${hour12}:${pad2(minute)} ${suffix}`
 }
 
+/** Parses an `<input type="time">` value into minutes since midnight. */
+export function parseTimeInput(value: string): number | null {
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value.trim())
+  if (!match) return null
+  return Number(match[1]) * 60 + Number(match[2])
+}
+
+/** Formats minutes since midnight for an `<input type="time">` value. */
+export function minutesToTimeInput(minutes: number): string {
+  const normalized = ((minutes % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY
+  return `${pad2(Math.floor(normalized / 60))}:${pad2(normalized % 60)}`
+}
+
 export function isSameDateKey(a: string, b: string): boolean {
   return a === b
 }

@@ -141,7 +141,13 @@ export function RequestReceivedPage() {
             </div>
             <div className="summary__row">
               <dt>Name</dt>
-              <dd>{record.customerUserId ? session?.name ?? 'Account holder' : record.guestName}</dd>
+              <dd>
+                {record.customerUserId
+                  ? session?.role === 'customer'
+                    ? session.name
+                    : 'Account holder'
+                  : record.guestName}
+              </dd>
             </div>
             <div className="summary__row">
               <dt>Email</dt>
@@ -180,7 +186,7 @@ export function RequestReceivedPage() {
               <div className="notice__title">This link is shown once</div>
               <p>
                 The private cancellation link was included in the request email
-                and is not stored on this page. {session ? 'You can also cancel a pending request from your appointments.' : 'Keep the email if you may need to cancel.'}
+                and is not stored on this page. {session?.role === 'customer' ? 'You can also cancel a pending request from your appointments.' : 'Keep the email if you may need to cancel.'}
               </p>
             </div>
           </div>
@@ -218,9 +224,13 @@ export function RequestReceivedPage() {
         </Card>
 
         <div className="row row--wrap">
-          {session ? (
+          {session?.role === 'customer' ? (
             <Link className={buttonClassName('primary')} to="/appointments">
               View my appointments
+            </Link>
+          ) : session?.role === 'staff' ? (
+            <Link className={buttonClassName('primary')} to="/staff/appointments">
+              Open the staff queue
             </Link>
           ) : (
             <Link className={buttonClassName('primary')} to="/signin">

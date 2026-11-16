@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { getDb, subscribe } from '../mock/store'
 import type { MockDatabase } from '../mock/seed'
 import type { SessionUser } from '../mock/api'
+import type { StaffMember } from '../mock/types'
 
 export function useMockDb(): MockDatabase {
   return useSyncExternalStore(subscribe, getDb, getDb)
@@ -9,10 +10,34 @@ export function useMockDb(): MockDatabase {
 
 export function useSession(): SessionUser | null {
   const db = useMockDb()
-  if (!db.sessionCustomerId) return null
-  const customer = db.customers.find((entry) => entry.id === db.sessionCustomerId)
-  if (!customer) return null
-  return { id: customer.id, name: customer.name, email: customer.email }
+  if (!db.session) return null
+
+  if (db.session.role === 'customer') {
+    const customer = db.customers.find((entry) => entry.id === db.session?.id)
+    if (!customer) return null
+    return {
+      id: customer.id,
+      name: customer.name,
+      email: customer.email,
+      role: 'customer',
+    }
+  }
+
+  const staff = db.staff.find((entry) => entry.id === db.session?.id)
+  if (!staff || !staff.isActive) return null
+  return {
+    id: staff.id,
+    name: staff.name,
+    email: staff.email,
+    role: db.session.role,
+  }
+}
+
+export function useStaff(): StaffMember | null {
+  const db = useMockDb()
+  const session = useSession()
+  if (!session || session.role !== 'staff') return null
+  return db.staff.find((entry) => entry.id === session.id) ?? null
 }
 
 export interface AsyncState<T> {
