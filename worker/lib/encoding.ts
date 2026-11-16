@@ -30,6 +30,19 @@ export function randomId(prefix: string): string {
   return `${prefix}_${randomHex(12)}`
 }
 
+const PUBLIC_REFERENCE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+const PUBLIC_REFERENCE_LENGTH = 8
+
+/** Non-sequential, customer-safe booking reference such as `SLO-7K4M2QXP`. */
+export function randomPublicReference(): string {
+  const bytes = randomBytes(PUBLIC_REFERENCE_LENGTH)
+  let body = ''
+  for (const byte of bytes) {
+    body += PUBLIC_REFERENCE_ALPHABET[byte % PUBLIC_REFERENCE_ALPHABET.length]
+  }
+  return `SLO-${body}`
+}
+
 export async function sha256Hex(value: string): Promise<string> {
   const digest = await crypto.subtle.digest(
     'SHA-256',

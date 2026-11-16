@@ -82,3 +82,37 @@ export interface AffectedBooking {
   /** Unix seconds. */
   startAt: number
 }
+
+/**
+ * Customer/guest-safe booking shape. Internal user IDs and the assigned staff
+ * member are intentionally omitted; the public reference is the identifier.
+ */
+export interface Booking {
+  publicReference: string
+  serviceId: string
+  serviceName: string
+  durationMinutes: number
+  /** Unix seconds. */
+  startAt: number
+  /** Unix seconds. */
+  endAt: number
+  status: AppointmentStatus
+  customerNote: string | null
+  guestName: string | null
+  guestEmail: string | null
+  /** Unix seconds. */
+  createdAt: number
+  /** Unix seconds. */
+  updatedAt: number
+}
+
+export interface CreateBookingResult {
+  appointment: Booking
+  /** Returned once for guest bookings; null for customer bookings. */
+  cancellationToken: string | null
+}
+
+export interface CustomerBookings {
+  upcoming: Booking[]
+  past: Booking[]
+}

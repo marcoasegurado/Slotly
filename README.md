@@ -1,6 +1,6 @@
 # Slotly
 
-Appointment booking for one small business. The React/Vite UI runs against an in-memory mock repository for booking, customer and staff flows. Phase 3 adds the Cloudflare Worker, Hono API and D1 schema foundation, Phase 4 adds password hashing, D1-backed sessions, role middleware and auth routes, and Phase 5 adds service management, staff schedules and the availability engine. The public business/services reads are wired to the Worker; the other client flows remain mock-backed until their API phases.
+Appointment booking for one small business. The React/Vite UI runs against an in-memory mock repository for booking, customer and staff flows. Phase 3 adds the Cloudflare Worker, Hono API and D1 schema foundation, Phase 4 adds password hashing, D1-backed sessions, role middleware and auth routes, Phase 5 adds service management, staff schedules and the availability engine, and Phase 6 adds guest/customer booking creation and cancellation. The public business/services reads are wired to the Worker; the other client flows remain mock-backed until their API phases.
 
 ## Run locally
 
@@ -92,6 +92,14 @@ Services, schedules and availability (Phase 5, backend):
 - `GET`/`POST /api/admin/services` and `PATCH /api/admin/services/:id` manage services. Deactivation returns `409 SERVICE_HAS_FUTURE_BOOKINGS` while future bookings remain.
 - DST-safe business-timezone conversion, half-open overlap rules and the schedule-conflict rules are covered by unit, repository and API tests.
 
+Guest and customer bookings (Phase 6, backend):
+
+- `POST /api/public/bookings` creates a `pending` request after revalidating the exact start against the availability engine. The server calculates the end time from the service duration and assigns an eligible staff member; clients never choose staff.
+- Guest bookings return a one-time cancellation token. D1 stores only its SHA-256 hash, and the token expires at the appointment start or after 72 hours, whichever comes first.
+- `POST /api/public/guest-cancellation` cancels only the linked pending guest booking. Unknown, used, expired, confirmed, cancelled and other invalid links all return the same `404 CANCELLATION_LINK_UNAVAILABLE`.
+- `GET /api/customer/bookings`, `GET /api/customer/bookings/:id` and `POST /api/customer/bookings/:id/cancel` require a customer session, use the public `SLO-...` reference and allow only pending self-cancellation.
+- Booking creation and guest cancellation are rate limited per client IP. The customer booking UI still uses the mock repository until the client integration phase.
+
 Mock UI (still in memory):
 
 - Public service/date/time selection, guest booking and customer booking.
@@ -111,7 +119,8 @@ Deferred: admin workspace/reassignment, staff account management, settings, repo
 
 - `worker/` — Hono app, auth/public/staff/admin routes, middleware, error envelope, availability engine and typed D1 repositories.
 - `worker/auth/` — password hashing, session cookies, role middleware and rate limiting.
-- `worker/services/` — availability calculation, schedule validation and availability-context loading.
+- `worker/repositories/` — typed D1 access for users, sessions, services, schedules, business settings and bookings.
+- `worker/services/` — availability calculation, schedule validation, availability-context loading and booking/token lifecycle.
 - `migrations/` — ordered D1 schema migrations; never edit an applied migration.
 - `seed/local.sql` — local-only sample business settings, services, hashed demo accounts and demo working hours.
 - `scripts/` — local password-hash generation and PBKDF2 benchmark commands.

@@ -78,6 +78,8 @@ Do not add an `expired` status. Reject new requests whose start time is not stri
 - Token is usable only while its appointment is `pending` and the token has not expired/been invalidated. Set its expiry no later than the appointment start time. Invalidate on approval, rejection or cancellation.
 - Token grants only the ability to cancel its associated pending booking. It does not authorize browsing or editing other appointment fields.
 
+**Phase 6 implementation note (16 November 2026):** `BookingsRepository.create()` inserts the pending appointment and, for guest bookings, the token row in one `db.batch()`. A guest token is 32 random bytes; only its SHA-256 hash is stored, and `expires_at` is `min(start_at, created_at + 72 hours)`. `cancelPendingGuest()` performs one conditional `UPDATE` that requires `status = 'pending'`, a guest-owned appointment and a live, unexpired, unused token through `EXISTS`, then marks the token used. A zero-row update returns the generic unavailable response, so a concurrent reuse cannot cancel twice. `cancelPendingForCustomer()` likewise requires the owning `customer_user_id` and `status = 'pending'` in the `UPDATE`, and records `cancelled_at` and `cancelled_by_user_id`. Booking creation revalidates the requested slot against the Phase 5 availability engine immediately before inserting; because pending requests never reserve a slot, confirmed-overlap protection remains the approval step's responsibility.
+
 ### `business_settings`
 
 Single-row singleton configuration: fixed `id`, `business_name`, optional `business_email`, `business_timezone`, `max_advance_booking_days`, `updated_at`. No business-wide holiday table in the MVP.

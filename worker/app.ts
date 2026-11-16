@@ -4,6 +4,7 @@ import { ApiError, apiError } from './http/errors'
 import { sameOriginGuard } from './http/csrf'
 import { adminRoutes } from './routes/admin'
 import { authRoutes } from './routes/auth'
+import { customerRoutes } from './routes/customer'
 import { healthRoutes } from './routes/health'
 import { publicRoutes } from './routes/public'
 import { staffRoutes } from './routes/staff'
@@ -22,6 +23,7 @@ export function createApp() {
   app.route('/api', healthRoutes)
   app.route('/api/public', publicRoutes)
   app.route('/api/auth', authRoutes)
+  app.route('/api/customer', customerRoutes)
   app.route('/api/staff', staffRoutes)
   app.route('/api/admin', adminRoutes)
 

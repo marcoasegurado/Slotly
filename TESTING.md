@@ -34,6 +34,8 @@ Use local D1/test bindings. Never run destructive tests against production.
 
 ## 3. Booking status and cancellation
 
+**Phase 6 coverage (16 November 2026):** `tests/bookings.test.ts` covers guest and customer creation, server-side end-time calculation and staff assignment, trimmed/normalized guest fields, hash-only token storage with a bounded expiry, validation and conflict responses, pending requests not blocking slots, generic guest-link failures for used/expired/non-pending/unknown tokens, customer ownership and list ordering, and pending-only customer self-cancellation.
+
 - Guest booking and authenticated customer booking both create `pending` appointments.
 - Server calculates end time; a client cannot override the service duration or status.
 - Server automatically assigns an eligible active staff member; a client-supplied staff ID cannot force assignment.

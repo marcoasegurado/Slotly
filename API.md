@@ -1,6 +1,6 @@
 # Slotly API Contract
 
-**Status:** Phase 3 foundation, Phase 4 authentication, and the Phase 5 services/schedules/availability backend are implemented on the Hono Worker. The public business/services reads are wired into the React client; other client flows remain mock-backed until their API phases. Align this contract with the actual implementation as routes are built, keep route handlers thin and enforce all authorization on the server.
+**Status:** Phase 3 foundation, Phase 4 authentication, Phase 5 services/schedules/availability, and the Phase 6 guest/customer booking and cancellation backend are implemented on the Hono Worker. The public business/services reads are wired into the React client; other client flows remain mock-backed until their API phases. Align this contract with the actual implementation as routes are built, keep route handlers thin and enforce all authorization on the server.
 
 ## 1. Conventions
 
@@ -19,7 +19,7 @@
 ```
 
 - Operational check: `GET /api/health` returns `{ "data": { "status": "ok", "service": "slotly-api", "environment": "...", "timestamp": 0 } }`, where `timestamp` is Unix seconds. It returns `503 DATABASE_UNAVAILABLE` when D1 cannot be queried.
-- Implemented: `/api/health`, `/api/public/business`, `/api/public/services`, `/api/public/availability`, the `/api/auth/*` routes in section 3, the staff schedule/time-off routes in section 4 and the admin service routes in section 5. The remaining routes below are contracts for later phases.
+- Implemented: `/api/health`, `/api/public/business`, `/api/public/services`, `/api/public/availability`, `/api/public/bookings`, `/api/public/guest-cancellation`, the `/api/auth/*` and `/api/customer/bookings*` routes in section 3, the staff schedule/time-off routes in section 4 and the admin service routes in section 5. The remaining routes below are contracts for later phases.
 - API instants (`startAt`, `endAt`) are integer Unix seconds. Business-local dates are `YYYY-MM-DD` in the configured IANA timezone.
 - Authenticated requests use the opaque `slotly_session` cookie. The cookie is `HttpOnly`, `SameSite=Lax`, `Path=/`, has a 7-day TTL and is `Secure` on HTTPS or in production. D1 stores only the SHA-256 hash of the token.
 - Mutating requests (`POST`, `PUT`, `PATCH`, `DELETE`) must send an `Origin` header that exactly matches the request origin; otherwise the API returns `403 CSRF_REJECTED`. Safe reads do not require an `Origin` header.
@@ -61,6 +61,55 @@ The guest link opens a read-only page through a route such as `/cancel/:token`. 
 - Only `confirmed` appointments block availability. `pending` requests never reserve a slot.
 - Invalid service or date input returns `422 VALIDATION_ERROR`; a missing or inactive service returns `404 SERVICE_NOT_FOUND`. When business settings are missing, the route returns `404 BUSINESS_NOT_CONFIGURED`.
 
+### 2.2 Implemented booking and cancellation behavior
+
+`POST /api/public/bookings` accepts:
+
+```json
+{
+  "serviceId": "svc_consult",
+  "startAt": 1794877200,
+  "guestName": "Jamie Guest",
+  "guestEmail": "jamie@example.com",
+  "customerNote": "First visit"
+}
+```
+
+- `startAt` is integer Unix seconds and must exactly match one of the slots currently returned by `GET /api/public/availability` for that service and business-local date. The server loads availability again, calculates `endAt` from the service duration and assigns the least-loaded eligible active staff member. Client-supplied staff IDs, end times, statuses or snapshots are ignored.
+- A valid `customer` session makes the booking customer-owned: the session user is linked and `guestName`/`guestEmail` are ignored. Without a customer session, `guestName` (2–100 characters) and a valid `guestEmail` are required.
+- `customerNote` is optional, trimmed and limited to 500 characters.
+- Success returns `201` with:
+
+```json
+{
+  "data": {
+    "appointment": {
+      "publicReference": "SLO-7K4M2QXP",
+      "serviceId": "svc_consult",
+      "serviceName": "Initial consultation",
+      "durationMinutes": 60,
+      "startAt": 1794877200,
+      "endAt": 1794880800,
+      "status": "pending",
+      "customerNote": "First visit",
+      "guestName": "Jamie Guest",
+      "guestEmail": "jamie@example.com",
+      "createdAt": 1794837600,
+      "updatedAt": 1794837600
+    },
+    "cancellationToken": "64-character hex token"
+  }
+}
+```
+
+- The booking shape never includes internal appointment IDs, user IDs or the assigned staff member. `publicReference` is the customer-facing identifier.
+- `cancellationToken` is returned exactly once for guest bookings and is `null` for customer bookings. D1 stores only its SHA-256 hash. The token expires at `min(appointment start, creation time + 72 hours)`.
+- A missing or inactive service returns `404 SERVICE_NOT_FOUND`; missing business settings return `404 BUSINESS_NOT_CONFIGURED`.
+- A start in the past or outside the booking window returns `422 VALIDATION_ERROR`. A closed day, a full day or a time that is not one of the current slots returns `409 BOOKING_CONFLICT`.
+- Requests are limited to 20 per client IP per hour. `429 RATE_LIMITED` includes `Retry-After` and `details.retryAfterSeconds`; the limiter is per Worker isolate and best-effort.
+
+`POST /api/public/guest-cancellation` accepts `{ "token": "..." }` and returns `200` with `{ "data": { "publicReference": "SLO-..." } }` after cancelling the linked pending guest booking. Unchanged, used, expired, confirmed, rejected, cancelled, customer-owned or unknown tokens all return the same `404 CANCELLATION_LINK_UNAVAILABLE`. Cancellation marks the token used and records `Cancelled by guest`. Requests are limited to 30 per client IP per 15 minutes.
+
 ## 3. Authentication and customer routes
 
 | Method | Route | Purpose / rules |
@@ -71,7 +120,7 @@ The guest link opens a read-only page through a route such as `/cancel/:token`. 
 | `GET` | `/api/auth/me` | Current user/role and whether a forced password change is required |
 | `POST` | `/api/auth/change-password` | Required for staff with `must_change_password=true`; validate current temporary credential/session and clear reset-required flag |
 | `GET` | `/api/customer/bookings` | Authenticated customer sees own bookings only |
-| `GET` | `/api/customer/bookings/:id` | Own booking details only |
+| `GET` | `/api/customer/bookings/:id` | Own booking details only; `:id` is the public `SLO-...` reference |
 | `POST` | `/api/customer/bookings/:id/cancel` | Cancel own pending booking only; confirmed booking is not self-cancellable in MVP |
 
 Do not build a self-service forgotten-password flow in the MVP. Staff password reset is an Admin action (below).
@@ -103,6 +152,12 @@ Wrong passwords, unknown emails, inactive accounts and expired temporary passwor
 `POST /api/auth/change-password` accepts `{ "currentPassword", "newPassword" }`, requires the current password, applies the same length policy, rejects reuse of the current password and revokes the user's other sessions. It returns `204`. If a temporary password has expired, the route revokes all of the user's sessions and returns `401 UNAUTHENTICATED`.
 
 Role middleware additionally returns `403 FORBIDDEN` when the authenticated role is not allowed and `403 PASSWORD_CHANGE_REQUIRED` when a staff/admin account still has `mustChangePassword = true`.
+
+### 3.2 Implemented customer booking behavior
+
+`GET /api/customer/bookings` requires a `customer` session and returns only that customer's appointments, split into `upcoming` and `past`. Upcoming bookings are `pending`, or `confirmed` with `endAt` in the future; everything else is past. Both lists are newest-first by start time. `GET /api/customer/bookings/:id` returns the same `Booking` shape, and `POST /api/customer/bookings/:id/cancel` cancels a pending booking and returns the updated booking.
+
+The `:id` path value is the public reference (`SLO-...`) and is matched case-insensitively. Internal IDs are never accepted or returned. Reading or cancelling another customer's booking, or an unknown reference, returns `404 BOOKING_NOT_FOUND`. Cancelling a non-pending booking returns `409 BOOKING_CONFLICT`. Unauthenticated requests return `401 UNAUTHENTICATED`; staff and admin sessions return `403 FORBIDDEN`. Customer cancellation records the acting user and `Cancelled by customer`.
 
 ## 4. Staff routes
 

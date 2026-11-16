@@ -1,4 +1,4 @@
-import { Hono, type Context } from 'hono'
+import { Hono } from 'hono'
 import type { AppEnv } from '../env'
 import { ApiError } from '../http/errors'
 import {
@@ -17,7 +17,8 @@ import {
   PASSWORD_MIN_LENGTH,
   verifyPassword,
 } from '../auth/password'
-import { clearRateLimit, consumeRateLimit } from '../auth/rate-limit'
+import { clearRateLimit } from '../auth/rate-limit'
+import { clientIp, enforceRateLimit } from '../http/rate-limit'
 import {
   clearSessionCookie,
   destroySession,
@@ -39,37 +40,6 @@ const REGISTER_WINDOW_MS = 60 * 60 * 1000
 const REGISTER_IP_LIMIT = 10
 
 export const authRoutes = new Hono<AppEnv>()
-
-function clientIp(c: Context<AppEnv>): string {
-  const cloudflareIp = c.req.header('CF-Connecting-IP')
-  if (cloudflareIp) return cloudflareIp
-
-  const forwarded = c.req.header('X-Forwarded-For')
-  if (forwarded) {
-    const first = forwarded.split(',')[0]?.trim()
-    if (first) return first
-  }
-
-  return 'local'
-}
-
-function enforceRateLimit(
-  c: Context<AppEnv>,
-  key: string,
-  limit: number,
-  windowMs: number,
-): void {
-  const result = consumeRateLimit(key, limit, windowMs)
-  if (result.allowed) return
-
-  c.header('Retry-After', String(result.retryAfterSeconds))
-  throw new ApiError(
-    429,
-    'RATE_LIMITED',
-    'Too many attempts. Try again later.',
-    { retryAfterSeconds: result.retryAfterSeconds },
-  )
-}
 
 authRoutes.post('/register', async (c) => {
   enforceRateLimit(
