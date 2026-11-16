@@ -1,11 +1,11 @@
 # Slotly Database Design
 
-**Status:** Proposed D1 model for Phase 3. Confirm the actual repository/scaffold before creating migrations. This document is the detailed source for schema, indexes, integrity and concurrency; `AGENTS.md` contains the non-negotiable product rules.
+**Status:** Implemented by `migrations/0001_initial_schema.sql` (16 November 2026). This document is the detailed source for schema, indexes, integrity and concurrency; `AGENTS (1).md` contains the non-negotiable product rules. Never edit an applied migration; add a new ordered migration instead.
 
 ## 1. Database conventions
 
 - Cloudflare D1 (SQLite), accessed only through Worker bindings and typed repositories.
-- Use UTC timestamps for appointment/time-off instants. Use integer Unix seconds consistently or one documented UTC ISO format; do not mix formats.
+- Use UTC timestamps for appointment/time-off instants. Persisted timestamps are integer Unix seconds consistently; do not mix formats. The React mock still uses ISO strings and will be mapped when the UI is wired to the API.
 - Store the business timezone as an IANA name (initial display default `Asia/Manila`, editable by Admin). Convert local working hours/date requests using tested timezone utilities.
 - Use prepared statements and bound parameters. Enable/verify foreign-key behavior for each environment.
 - Add ordered migrations. Never edit an already-applied migration; add a new migration for schema changes.

@@ -1,12 +1,12 @@
 # Slotly API Contract
 
-**Status:** Proposed route contract for Phase 3+; align it with the actual Hono implementation as routes are built. Keep route handlers thin and enforce all authorization on the server.
+**Status:** Implemented foundation for Phase 3+; align this contract with the actual Hono implementation as routes are built. Keep route handlers thin and enforce all authorization on the server.
 
 ## 1. Conventions
 
 - Base path: `/api`.
 - JSON request/response unless a route explicitly returns CSV or a page.
-- Use consistent success envelopes and one error shape, for example:
+- Successful responses use a `{ "data": ... }` envelope. Errors use one shape:
 
 ```json
 {
@@ -17,6 +17,9 @@
   }
 }
 ```
+
+- Operational check: `GET /api/health` returns `{ "data": { "status": "ok", "service": "slotly-api", "environment": "...", "timestamp": 0 } }`, where `timestamp` is Unix seconds. It returns `503 DATABASE_UNAVAILABLE` when D1 cannot be queried.
+- Phase 3 implements only `/api/health`, `/api/public/business` and `/api/public/services`. The remaining routes below are contracts for later phases.
 
 - Validate bodies, params and query strings server-side. Use prepared statements.
 - Status codes: `200` read/update success, `201` created, `204` successful no-content action, `400` malformed request, `401` unauthenticated, `403` forbidden, `404` unavailable/not found, `409` state/availability conflict, `422` validation failure, `429` rate limited, `500` generic internal error.

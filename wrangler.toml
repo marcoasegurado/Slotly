@@ -1,0 +1,25 @@
+#:schema node_modules/wrangler/config-schema.json
+
+name = "slotly"
+main = "worker/index.ts"
+compatibility_date = "2026-11-16"
+
+# The Vite client is built to ./dist and served by Workers static assets.
+# Only /api/* is routed to the Hono Worker; every other request falls back to
+# the single-page app.
+[assets]
+directory = "./dist"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+[vars]
+ENVIRONMENT = "development"
+
+# Local development only. `wrangler dev` and `wrangler d1 --local` use the
+# local Miniflare database and never contact this ID. A real UUID will be set
+# only during the approved Phase 10 deployment; do not invent a production ID.
+[[d1_databases]]
+binding = "DB"
+database_name = "slotly-local"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"

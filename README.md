@@ -1,22 +1,33 @@
 # Slotly
 
-Appointment booking for one small business. This repository currently contains the React/Vite UI running against an in-memory mock repository. It is not connected to Cloudflare Workers, D1 or email delivery yet.
+Appointment booking for one small business. The React/Vite UI currently runs against an in-memory mock repository. Phase 3 adds the Cloudflare Worker, Hono API and D1 schema foundation, but the UI is not wired to the real API yet.
 
 ## Run locally
 
+Install dependencies and prepare the local D1 database:
+
 ```bash
 npm ci
-npm run dev
+npm run db:migrate:local
+npm run db:seed:local
+```
+
+Run the API Worker and the Vite client in separate terminals:
+
+```bash
+npm run dev:worker   # Hono API on http://127.0.0.1:8787
+npm run dev          # Vite on http://localhost:5173, proxies /api
 ```
 
 Checks:
 
 ```bash
 npm run typecheck
+npm test
 npm run build
 ```
 
-The mock database resets on every reload. The demo banner in the app can reset it manually.
+The mock database resets on every reload. The demo banner in the app can reset it manually. Local D1 state lives in `.wrangler/` and is ignored by Git.
 
 ## Demo accounts
 
@@ -41,6 +52,14 @@ Deployment is Phase 10 work and has not happened yet. No Cloudflare resources, b
 
 ## Implemented flows
 
+Backend foundation (Phase 3, not yet wired to the UI):
+
+- Ordered D1 migration for users, staff profiles, services, working hours, time off, appointments, guest cancellation tokens, business settings, sessions, notification outbox and audit logs.
+- Hono Worker with `GET /api/health`, `GET /api/public/business` and `GET /api/public/services`.
+- Typed D1 repositories, a local-only seed and schema/API tests against `node:sqlite`.
+
+Mock UI (still in memory):
+
 - Public service/date/time selection, guest booking and customer booking.
 - Guest cancellation with a private token that works only while the request is pending.
 - Customer sign-in, registration and appointment history.
@@ -56,6 +75,10 @@ Deferred: admin workspace/reassignment, staff account management, service manage
 
 ## Source layout
 
+- `worker/` — Hono app, public routes, error envelope and typed D1 repositories.
+- `migrations/` — ordered D1 schema migrations; never edit an applied migration.
+- `seed/local.sql` — local-only sample business settings and services.
+- `tests/` — schema, repository and Worker API tests using an in-memory D1 adapter.
 - `src/mock/` — in-memory repository and seed data with API-shaped functions.
 - `src/lib/` — time, availability and React hook helpers.
 - `src/components/` — shared UI and layout components.
