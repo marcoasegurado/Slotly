@@ -1,4 +1,5 @@
 import { createSeedDatabase, type MockDatabase } from './seed'
+import type { Business, Service } from './types'
 
 let database: MockDatabase = createSeedDatabase()
 
@@ -10,7 +11,7 @@ export function getDb(): MockDatabase {
 
 export function resetDb(): void {
   database = createSeedDatabase()
-  emit()
+  publish()
 }
 
 export function subscribe(listener: () => void): () => void {
@@ -21,8 +22,22 @@ export function subscribe(listener: () => void): () => void {
 }
 
 export function emit(): void {
-  // Publish a new top-level snapshot so useSyncExternalStore subscribers
-  // re-render after in-place mutations.
   database = { ...database }
+  publish()
+}
+
+/** Replaces only the public business settings with Worker-backed values. */
+export function applyPublicBusiness(business: Business): void {
+  database = { ...database, business }
+  publish()
+}
+
+/** Replaces only the public service catalogue with Worker-backed values. */
+export function applyPublicServices(services: Service[]): void {
+  database = { ...database, services }
+  publish()
+}
+
+function publish(): void {
   for (const listener of listeners) listener()
 }

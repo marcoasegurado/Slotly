@@ -12,7 +12,7 @@ export type AppointmentStatus = 'pending' | 'confirmed' | 'rejected' | 'cancelle
 
 export interface Business {
   businessName: string
-  businessEmail: string
+  businessEmail: string | null
   timezone: string
   maxAdvanceBookingDays: number
 }

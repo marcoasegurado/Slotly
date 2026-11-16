@@ -240,8 +240,10 @@ export function DateTimePage() {
                   </div>
                 ) : (
                   <p className="text-sm secondary">
-                    There are no bookable dates in the current window. Contact
-                    the business at {db.business.businessEmail}.
+                    There are no bookable dates in the current window.
+                    {db.business.businessEmail
+                      ? ` Contact the business at ${db.business.businessEmail}.`
+                      : ' Contact the business directly.'}
                   </p>
                 )}
               </div>

@@ -167,8 +167,10 @@ export function BookingDetailPage() {
             <div>
               <div className="notice__title">Need to change a confirmed appointment?</div>
               <p>
-                Contact the business at {db.business.businessEmail}. Confirmed
-                bookings cannot be cancelled from this page.
+                {db.business.businessEmail
+                  ? `Contact the business at ${db.business.businessEmail}.`
+                  : 'Contact the business directly.'}{' '}
+                Confirmed bookings cannot be cancelled from this page.
               </p>
             </div>
           </div>

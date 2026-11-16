@@ -83,7 +83,8 @@ export function SiteFooter() {
     <footer className="site-footer">
       <div className="container site-footer__inner">
         <span>
-          {db.business.businessName} · {db.business.businessEmail}
+          {db.business.businessName}
+          {db.business.businessEmail ? ` · ${db.business.businessEmail}` : ''}
         </span>
         <span className="mono">
           Times shown in {db.business.timezone.replace('_', ' ')} · Payment at

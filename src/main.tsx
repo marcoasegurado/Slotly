@@ -12,11 +12,16 @@ import '@fontsource/ibm-plex-mono/500.css'
 import './styles/tokens.css'
 import './styles/base.css'
 import { App } from './App'
+import { hydratePublicData } from './lib/public-api'
 
 const container = document.getElementById('root')
 if (!container) {
   throw new Error('Root element #root was not found.')
 }
+
+// Load the real public business/services data when the Worker is available.
+// The remaining booking and workspace flows stay mock-backed for now.
+void hydratePublicData()
 
 createRoot(container).render(
   <StrictMode>

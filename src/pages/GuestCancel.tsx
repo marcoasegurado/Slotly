@@ -189,7 +189,7 @@ export function GuestCancelPage() {
       <footer className="site-footer">
         <div className="container site-footer__inner">
           <span>Private link · do not share</span>
-          <span className="mono">{db.business.businessEmail}</span>
+          <span className="mono">{db.business.businessEmail ?? ''}</span>
         </div>
       </footer>
     </div>
