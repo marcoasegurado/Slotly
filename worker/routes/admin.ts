@@ -3,21 +3,186 @@ import { requireAuth, requireRole } from '../auth/middleware'
 import type { AppEnv } from '../env'
 import { ApiError } from '../http/errors'
 import {
+  parseAppointmentLimit,
+  parseAppointmentStatus,
+  parseQueryId,
+  parseReason,
+  parseSearchQuery,
+} from '../http/appointment-query'
+import {
   optionalBoolean,
   optionalInteger,
   optionalNullableString,
   optionalString,
   readJsonObject,
+  readOptionalJsonObject,
   requiredInteger,
   requiredString,
 } from '../http/validation'
 import { randomId } from '../lib/encoding'
 import { unixSeconds } from '../lib/time'
 import { ServicesRepository } from '../repositories/services'
+import {
+  approveAdminAppointment,
+  cancelAdminAppointment,
+  getAdminAppointment,
+  listActiveStaff,
+  listAdminAppointments,
+  reassignAdminAppointment,
+  rejectAdminAppointment,
+  rescheduleAdminAppointment,
+} from '../services/appointment-management'
 
 export const adminRoutes = new Hono<AppEnv>()
 
 adminRoutes.use('*', requireAuth, requireRole('admin'))
+
+const MAX_UNIX_SECONDS = 4_102_444_800 // 2100-01-01
+
+adminRoutes.get('/appointments', async (c) => {
+  return c.json({
+    data: await listAdminAppointments(c.env.DB, {
+      status: parseAppointmentStatus(c.req.query('status')),
+      staffId: parseQueryId(c.req.query('staffId'), 'staff member'),
+      serviceId: parseQueryId(c.req.query('serviceId'), 'service'),
+      date: c.req.query('date')?.trim() || undefined,
+      search: parseSearchQuery(c.req.query('q')),
+      limit: parseAppointmentLimit(c.req.query('limit')),
+    }),
+  })
+})
+
+adminRoutes.get('/appointments/:id', async (c) => {
+  const id = c.req.param('id')
+  if (!id) {
+    throw new ApiError(
+      404,
+      'APPOINTMENT_NOT_FOUND',
+      'That appointment was not found.',
+    )
+  }
+
+  return c.json({ data: await getAdminAppointment(c.env.DB, id) })
+})
+
+adminRoutes.patch('/appointments/:id', async (c) => {
+  const id = c.req.param('id')
+  if (!id) {
+    throw new ApiError(
+      404,
+      'APPOINTMENT_NOT_FOUND',
+      'That appointment was not found.',
+    )
+  }
+
+  const body = await readJsonObject(c)
+  const startAt = requiredInteger(
+    body,
+    'startAt',
+    'start time',
+    1,
+    MAX_UNIX_SECONDS,
+  )
+  return c.json({
+    data: await rescheduleAdminAppointment(
+      c.env.DB,
+      c.get('user').id,
+      id,
+      startAt,
+    ),
+  })
+})
+
+adminRoutes.post('/appointments/:id/approve', async (c) => {
+  const id = c.req.param('id')
+  if (!id) {
+    throw new ApiError(
+      404,
+      'APPOINTMENT_NOT_FOUND',
+      'That appointment was not found.',
+    )
+  }
+
+  return c.json({
+    data: await approveAdminAppointment(c.env.DB, c.get('user').id, id),
+  })
+})
+
+adminRoutes.post('/appointments/:id/reject', async (c) => {
+  const id = c.req.param('id')
+  if (!id) {
+    throw new ApiError(
+      404,
+      'APPOINTMENT_NOT_FOUND',
+      'That appointment was not found.',
+    )
+  }
+
+  const body = await readOptionalJsonObject(c)
+  return c.json({
+    data: await rejectAdminAppointment(
+      c.env.DB,
+      c.get('user').id,
+      id,
+      parseReason(body),
+    ),
+  })
+})
+
+adminRoutes.post('/appointments/:id/cancel', async (c) => {
+  const id = c.req.param('id')
+  if (!id) {
+    throw new ApiError(
+      404,
+      'APPOINTMENT_NOT_FOUND',
+      'That appointment was not found.',
+    )
+  }
+
+  const body = await readOptionalJsonObject(c)
+  return c.json({
+    data: await cancelAdminAppointment(
+      c.env.DB,
+      c.get('user').id,
+      id,
+      parseReason(body),
+    ),
+  })
+})
+
+adminRoutes.post('/appointments/:id/reassign', async (c) => {
+  const id = c.req.param('id')
+  if (!id) {
+    throw new ApiError(
+      404,
+      'APPOINTMENT_NOT_FOUND',
+      'That appointment was not found.',
+    )
+  }
+
+  const body = await readJsonObject(c)
+  const staffId = requiredString(body, 'staffId', 'staff member', 1, 100)
+  const startAt = optionalInteger(
+    body,
+    'startAt',
+    'start time',
+    1,
+    MAX_UNIX_SECONDS,
+  )
+
+  return c.json({
+    data: await reassignAdminAppointment(
+      c.env.DB,
+      c.get('user').id,
+      id,
+      { staffId, startAt },
+    ),
+  })
+})
+
+adminRoutes.get('/staff', async (c) => {
+  return c.json({ data: await listActiveStaff(c.env.DB) })
+})
 
 adminRoutes.get('/services', async (c) => {
   return c.json({ data: await new ServicesRepository(c.env.DB).listAll() })

@@ -3,17 +3,32 @@ import { requireAuth, requireRole } from '../auth/middleware'
 import type { AppEnv } from '../env'
 import { ApiError } from '../http/errors'
 import {
+  parseAppointmentStatus,
+  parseReason,
+  parseStaffScope,
+} from '../http/appointment-query'
+import {
   optionalNullableString,
   readJsonObject,
+  readOptionalJsonObject,
   requiredArray,
   requiredInteger,
 } from '../http/validation'
 import { unixSeconds } from '../lib/time'
-import { BusinessSettingsRepository } from '../repositories/business-settings'
 import { SchedulesRepository } from '../repositories/schedules'
+import {
+  approveStaffAppointment,
+  cancelStaffAppointment,
+  getStaffAppointment,
+  getStaffDashboard,
+  listStaffAppointments,
+  rejectStaffAppointment,
+  rescheduleStaffAppointment,
+} from '../services/appointment-management'
 import { findScheduleConflicts } from '../services/availability'
+import { requireBusinessSettings } from '../services/business'
 import { parseWorkingHours } from '../services/schedule'
-import type { PublicBusiness, StaffSchedule } from '../types'
+import type { StaffSchedule } from '../types'
 
 const MAX_UNIX_SECONDS = 4_102_444_800 // 2100-01-01
 const MAX_TIME_OFF_REASON = 200
@@ -21,18 +36,6 @@ const MAX_TIME_OFF_REASON = 200
 export const staffRoutes = new Hono<AppEnv>()
 
 staffRoutes.use('*', requireAuth, requireRole('staff'))
-
-async function requireBusiness(db: D1Database): Promise<PublicBusiness> {
-  const business = await new BusinessSettingsRepository(db).getPublic()
-  if (!business) {
-    throw new ApiError(
-      500,
-      'BUSINESS_NOT_CONFIGURED',
-      'Business settings have not been configured.',
-    )
-  }
-  return business
-}
 
 async function requireSchedule(
   db: D1Database,
@@ -49,6 +52,126 @@ async function requireSchedule(
   return schedule
 }
 
+staffRoutes.get('/dashboard', async (c) => {
+  return c.json({
+    data: await getStaffDashboard(c.env.DB, c.get('user').id),
+  })
+})
+
+staffRoutes.get('/appointments', async (c) => {
+  const filters = {
+    status: parseAppointmentStatus(c.req.query('status')),
+    scope: parseStaffScope(c.req.query('scope')),
+  }
+  return c.json({
+    data: await listStaffAppointments(
+      c.env.DB,
+      c.get('user').id,
+      filters,
+    ),
+  })
+})
+
+staffRoutes.get('/appointments/:id', async (c) => {
+  const id = c.req.param('id')
+  if (!id) {
+    throw new ApiError(
+      404,
+      'APPOINTMENT_NOT_FOUND',
+      'That appointment was not found.',
+    )
+  }
+
+  return c.json({
+    data: await getStaffAppointment(c.env.DB, c.get('user').id, id),
+  })
+})
+
+staffRoutes.post('/appointments/:id/approve', async (c) => {
+  const id = c.req.param('id')
+  if (!id) {
+    throw new ApiError(
+      404,
+      'APPOINTMENT_NOT_FOUND',
+      'That appointment was not found.',
+    )
+  }
+
+  return c.json({
+    data: await approveStaffAppointment(c.env.DB, c.get('user').id, id),
+  })
+})
+
+staffRoutes.post('/appointments/:id/reject', async (c) => {
+  const id = c.req.param('id')
+  if (!id) {
+    throw new ApiError(
+      404,
+      'APPOINTMENT_NOT_FOUND',
+      'That appointment was not found.',
+    )
+  }
+
+  const body = await readOptionalJsonObject(c)
+  return c.json({
+    data: await rejectStaffAppointment(
+      c.env.DB,
+      c.get('user').id,
+      id,
+      parseReason(body),
+    ),
+  })
+})
+
+staffRoutes.post('/appointments/:id/cancel', async (c) => {
+  const id = c.req.param('id')
+  if (!id) {
+    throw new ApiError(
+      404,
+      'APPOINTMENT_NOT_FOUND',
+      'That appointment was not found.',
+    )
+  }
+
+  const body = await readOptionalJsonObject(c)
+  return c.json({
+    data: await cancelStaffAppointment(
+      c.env.DB,
+      c.get('user').id,
+      id,
+      parseReason(body),
+    ),
+  })
+})
+
+staffRoutes.patch('/appointments/:id', async (c) => {
+  const id = c.req.param('id')
+  if (!id) {
+    throw new ApiError(
+      404,
+      'APPOINTMENT_NOT_FOUND',
+      'That appointment was not found.',
+    )
+  }
+
+  const body = await readJsonObject(c)
+  const startAt = requiredInteger(
+    body,
+    'startAt',
+    'start time',
+    1,
+    MAX_UNIX_SECONDS,
+  )
+  return c.json({
+    data: await rescheduleStaffAppointment(
+      c.env.DB,
+      c.get('user').id,
+      id,
+      startAt,
+    ),
+  })
+})
+
 staffRoutes.get('/availability', async (c) => {
   const schedule = await requireSchedule(c.env.DB, c.get('user').id)
   return c.json({ data: schedule })
@@ -61,7 +184,7 @@ staffRoutes.put('/availability', async (c) => {
   )
 
   const schedule = await requireSchedule(c.env.DB, c.get('user').id)
-  const business = await requireBusiness(c.env.DB)
+  const business = await requireBusinessSettings(c.env.DB)
   const repository = new SchedulesRepository(c.env.DB)
   const now = new Date()
   const nowUnix = unixSeconds(now.getTime())
@@ -143,7 +266,7 @@ staffRoutes.post('/time-off', async (c) => {
   }
 
   const schedule = await requireSchedule(c.env.DB, c.get('user').id)
-  const business = await requireBusiness(c.env.DB)
+  const business = await requireBusinessSettings(c.env.DB)
   const repository = new SchedulesRepository(c.env.DB)
   const futureAppointments = await repository.listFutureAppointments(
     c.get('user').id,

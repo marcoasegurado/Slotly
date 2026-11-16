@@ -1,6 +1,6 @@
 # Slotly
 
-Appointment booking for one small business. The React/Vite UI runs against an in-memory mock repository for booking, customer and staff flows. Phase 3 adds the Cloudflare Worker, Hono API and D1 schema foundation, Phase 4 adds password hashing, D1-backed sessions, role middleware and auth routes, Phase 5 adds service management, staff schedules and the availability engine, and Phase 6 adds guest/customer booking creation and cancellation. The public business/services reads are wired to the Worker; the other client flows remain mock-backed until their API phases.
+Appointment booking for one small business. The React/Vite UI runs against an in-memory mock repository for booking, customer and staff flows. Phase 3 adds the Cloudflare Worker, Hono API and D1 schema foundation, Phase 4 adds password hashing, D1-backed sessions, role middleware and auth routes, Phase 5 adds service management, staff schedules and the availability engine, Phase 6 adds guest/customer booking creation and cancellation, and Phase 7 adds staff approval/rejection/rescheduling plus admin reassignment. The public business/services reads are wired to the Worker; the other client flows remain mock-backed until their API phases.
 
 ## Run locally
 
@@ -100,6 +100,17 @@ Guest and customer bookings (Phase 6, backend):
 - `GET /api/customer/bookings`, `GET /api/customer/bookings/:id` and `POST /api/customer/bookings/:id/cancel` require a customer session, use the public `SLO-...` reference and allow only pending self-cancellation.
 - Booking creation and guest cancellation are rate limited per client IP. The customer booking UI still uses the mock repository until the client integration phase.
 
+Staff and admin appointment management (Phase 7, backend):
+
+- `GET /api/staff/dashboard` returns the signed-in staff member's pending requests, today's pending/confirmed appointments and confirmed upcoming appointments with counts.
+- `GET /api/staff/appointments` supports `status` and `scope` (`all`, `today`, `upcoming`) filters; `GET /api/staff/appointments/:id` exposes only appointments assigned to that staff member. Path values are the public `SLO-...` reference.
+- Staff can approve a pending request, reject it, cancel a confirmed appointment, or reschedule within their own schedule. Approval rechecks the future start, working hours, time off and confirmed overlaps; a conflict never confirms silently.
+- `PATCH /api/staff/appointments/:id` accepts only a new `startAt`. Staff cannot change the assigned staff member.
+- Admin can list/filter every appointment, read any appointment, approve/reject/reschedule it, cancel pending or confirmed appointments, and reassign to another active staff member through `POST /api/admin/appointments/:id/reassign`.
+- Reassignment validates the target staff member, working hours, time off, booking window and confirmed overlaps, and is audited. `GET /api/admin/staff` returns the read-only active-staff list used by the reassignment control.
+- Approval/rejection/cancellation invalidates any guest cancellation token for that appointment. Audit rows are written for approve, reject, cancel, reschedule and reassign. Notification outbox rows remain Phase 8 work.
+- The schedule, time-off and confirmed-overlap predicates are repeated inside the conditional `UPDATE`; the preflight checks provide clear errors, while the SQL remains the concurrency backstop.
+
 Mock UI (still in memory):
 
 - Public service/date/time selection, guest booking and customer booking.
@@ -113,14 +124,14 @@ Mock UI (still in memory):
 - Pending requests never block customer availability; approval rechecks hours, time off and confirmed overlaps.
 - Staff cannot reassign appointments or view another staff member's assignments.
 
-Deferred: admin workspace/reassignment, staff account management, settings, reports/CSV and the email outbox. Admin service management exists in the backend API but has no UI yet.
+Deferred: admin workspace UI, admin-issued staff passwords/forced password change, staff account management, settings, reports/CSV and the email outbox. Admin service and appointment management exist in the backend API but have no UI yet.
 
 ## Source layout
 
 - `worker/` — Hono app, auth/public/staff/admin routes, middleware, error envelope, availability engine and typed D1 repositories.
 - `worker/auth/` — password hashing, session cookies, role middleware and rate limiting.
-- `worker/repositories/` — typed D1 access for users, sessions, services, schedules, business settings and bookings.
-- `worker/services/` — availability calculation, schedule validation, availability-context loading and booking/token lifecycle.
+- `worker/repositories/` — typed D1 access for users, sessions, services, schedules, business settings, bookings, managed appointments and audit logs.
+- `worker/services/` — availability calculation, schedule validation, availability-context loading, booking/token lifecycle and staff/admin appointment management.
 - `migrations/` — ordered D1 schema migrations; never edit an applied migration.
 - `seed/local.sql` — local-only sample business settings, services, hashed demo accounts and demo working hours.
 - `scripts/` — local password-hash generation and PBKDF2 benchmark commands.

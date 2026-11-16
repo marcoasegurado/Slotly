@@ -231,6 +231,62 @@ export function findNextAvailableDates(
   return results
 }
 
+export interface StaffSlotValidationInput {
+  timezone: string
+  maxAdvanceBookingDays: number
+  staff: AvailabilityStaff
+  /** Must already exclude the appointment being moved, if any. */
+  confirmedAppointments: ConfirmedAppointment[]
+  durationMinutes: number
+  /** Unix seconds. */
+  startAt: number
+  now: Date
+}
+
+/**
+ * Validates an exact interval for one specific staff member. Never selects a
+ * different person. Used by staff approval/rescheduling and admin reassignment.
+ */
+export function validateStaffSlot(
+  input: StaffSlotValidationInput,
+): { startAt: number; endAt: number } | null {
+  if (input.durationMinutes <= 0) return null
+
+  const startInstant = new Date(input.startAt * 1000)
+  const dateKey = toDateKey(startInstant, input.timezone)
+  const today = todayDateKey(input.timezone, input.now)
+  const offset = daysBetweenDateKeys(today, dateKey)
+  if (offset < 0 || offset > input.maxAdvanceBookingDays) return null
+
+  const startMinute = minutesOfDay(startInstant, input.timezone)
+  const endMinute = startMinute + input.durationMinutes
+  if (endMinute > 1440) return null
+
+  const weekday = weekdayOfDateKey(dateKey)
+  if (!fitsIntervals(input.staff.workingHours, weekday, startMinute, endMinute)) {
+    return null
+  }
+
+  const start = zonedTimeToUtc(dateKey, startMinute, input.timezone)
+  const end = zonedTimeToUtc(dateKey, endMinute, input.timezone)
+  const startUnix = Math.floor(start.getTime() / 1000)
+  const endUnix = Math.floor(end.getTime() / 1000)
+
+  // Reject times that do not land exactly on a business-local minute boundary.
+  if (startUnix !== Math.floor(input.startAt)) return null
+  if (startUnix <= Math.floor(input.now.getTime() / 1000)) return null
+  if (hasTimeOff(input.staff, startUnix, endUnix)) return null
+
+  const conflict = input.confirmedAppointments.some(
+    (appointment) =>
+      appointment.staffUserId === input.staff.id &&
+      overlaps(startUnix, endUnix, appointment.startAt, appointment.endAt),
+  )
+  if (conflict) return null
+
+  return { startAt: startUnix, endAt: endUnix }
+}
+
 export interface ScheduleConflictInput {
   timezone: string
   staffId: string

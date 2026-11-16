@@ -17,6 +17,29 @@ export async function readJsonObject(
   return body as Record<string, unknown>
 }
 
+/**
+ * Accepts an empty body, which is useful for action endpoints that take only
+ * optional fields such as a rejection reason.
+ */
+export async function readOptionalJsonObject(
+  c: Context,
+): Promise<Record<string, unknown>> {
+  const raw = await c.req.raw.text()
+  if (raw.trim() === '') return {}
+
+  let body: unknown
+  try {
+    body = JSON.parse(raw)
+  } catch {
+    throw new ApiError(400, 'INVALID_JSON', 'Send a valid JSON body.')
+  }
+
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    throw new ApiError(422, 'VALIDATION_ERROR', 'Send a JSON object.')
+  }
+  return body as Record<string, unknown>
+}
+
 export function requiredString(
   body: Record<string, unknown>,
   field: string,

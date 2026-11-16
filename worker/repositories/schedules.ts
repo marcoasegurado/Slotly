@@ -114,6 +114,20 @@ export class SchedulesRepository {
     return results.map(toWorkingHour)
   }
 
+  async listActiveStaff(): Promise<StaffRow[]> {
+    const { results } = await this.db
+      .prepare(
+        `SELECT u.id, u.name, u.email
+           FROM users u
+           JOIN staff_profiles p ON p.user_id = u.id
+          WHERE u.role = 'staff' AND u.is_active = 1
+          ORDER BY u.name ASC, u.id ASC`,
+      )
+      .all<StaffRow>()
+
+    return results
+  }
+
   async listTimeOff(staffUserId: string): Promise<TimeOff[]> {
     const { results } = await this.db
       .prepare(
@@ -242,6 +256,39 @@ export class SchedulesRepository {
       startAt: row.start_at,
       endAt: row.end_at,
       durationMinutes: row.duration_minutes_snapshot,
+    }))
+  }
+
+  /** Confirmed overlaps for one staff member in a half-open range. */
+  async listConfirmedBetween(
+    staffUserId: string,
+    start: number,
+    end: number,
+    excludeAppointmentId?: string,
+  ): Promise<ConfirmedAppointment[]> {
+    const excludeClause = excludeAppointmentId ? 'AND id <> ?' : ''
+    const params = excludeAppointmentId
+      ? [staffUserId, start, end, excludeAppointmentId]
+      : [staffUserId, start, end]
+
+    const { results } = await this.db
+      .prepare(
+        `SELECT assigned_staff_user_id, start_at, end_at
+           FROM appointments
+          WHERE assigned_staff_user_id = ?
+            AND status = 'confirmed'
+            AND end_at > ?
+            AND start_at < ?
+            ${excludeClause}
+          ORDER BY start_at ASC, id ASC`,
+      )
+      .bind(...params)
+      .all<ConfirmedAppointmentRow>()
+
+    return results.map((row) => ({
+      staffUserId: row.assigned_staff_user_id,
+      startAt: row.start_at,
+      endAt: row.end_at,
     }))
   }
 

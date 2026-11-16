@@ -116,3 +116,48 @@ export interface CustomerBookings {
   upcoming: Booking[]
   past: Booking[]
 }
+
+/** Staff/admin-facing booking detail. Internal row IDs stay in the repository. */
+export interface ManagedAppointment {
+  publicReference: string
+  serviceId: string
+  serviceName: string
+  durationMinutes: number
+  assignedStaff: {
+    id: string
+    name: string
+    email: string
+  }
+  customer: {
+    name: string
+    email: string
+  } | null
+  guestName: string | null
+  guestEmail: string | null
+  /** Unix seconds. */
+  startAt: number
+  /** Unix seconds. */
+  endAt: number
+  status: AppointmentStatus
+  customerNote: string | null
+  resolutionNote: string | null
+  /** Unix seconds. */
+  createdAt: number
+  /** Unix seconds. */
+  updatedAt: number
+  /** Unix seconds. */
+  approvedAt: number | null
+  /** Unix seconds. */
+  cancelledAt: number | null
+}
+
+export interface StaffDashboard {
+  pending: ManagedAppointment[]
+  today: ManagedAppointment[]
+  upcoming: ManagedAppointment[]
+  counts: {
+    pending: number
+    today: number
+    confirmedUpcoming: number
+  }
+}

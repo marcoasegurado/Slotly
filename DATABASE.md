@@ -80,6 +80,8 @@ Do not add an `expired` status. Reject new requests whose start time is not stri
 
 **Phase 6 implementation note (16 November 2026):** `BookingsRepository.create()` inserts the pending appointment and, for guest bookings, the token row in one `db.batch()`. A guest token is 32 random bytes; only its SHA-256 hash is stored, and `expires_at` is `min(start_at, created_at + 72 hours)`. `cancelPendingGuest()` performs one conditional `UPDATE` that requires `status = 'pending'`, a guest-owned appointment and a live, unexpired, unused token through `EXISTS`, then marks the token used. A zero-row update returns the generic unavailable response, so a concurrent reuse cannot cancel twice. `cancelPendingForCustomer()` likewise requires the owning `customer_user_id` and `status = 'pending'` in the `UPDATE`, and records `cancelled_at` and `cancelled_by_user_id`. Booking creation revalidates the requested slot against the Phase 5 availability engine immediately before inserting; because pending requests never reserve a slot, confirmed-overlap protection remains the approval step's responsibility.
 
+**Phase 7 note (16 November 2026):** Staff approval, rejection and cancellation invalidate every live guest token for the appointment. The invalidation runs in the same `db.batch()` as the audit insert after the conditional status change succeeds. Token lookups already require `a.status = 'pending'`, so a changed appointment is never cancellable by link even if the cleanup statement were to fail.
+
 ### `business_settings`
 
 Single-row singleton configuration: fixed `id`, `business_name`, optional `business_email`, `business_timezone`, `max_advance_booking_days`, `updated_at`. No business-wide holiday table in the MVP.
@@ -97,6 +99,8 @@ Sessions are D1-backed: `id`, `user_id` FK, unique `session_token_hash`, `expire
 ### `audit_logs`
 
 Recommended fields: `id`, `actor_user_id`, `action`, `entity_type`, `entity_id`, sanitized `metadata_json`, `created_at`. Log approvals, rejections, cancellation, admin reassignment/reschedule, staff activation/deactivation, availability changes, service deactivation and settings changes. Do not log passwords, session tokens, guest tokens or unnecessary personal data.
+
+**Phase 7 implementation note (16 November 2026):** `AuditRepository` writes `appointment.approved`, `appointment.rejected`, `appointment.cancelled`, `appointment.rescheduled` and `appointment.reassigned` rows. `entity_id` is the public appointment reference, and metadata contains only staff user IDs, previous/new status and previous/new start/end times plus the resolution note where applicable. No guest token, session token or password value is recorded.
 
 ## 3. Indexes and constraints
 
@@ -134,6 +138,8 @@ The update should return/check affected-row count. If zero rows changed, return 
 If approval must also write an outbox/audit row or perform multiple dependent statements, use `env.DB.batch([...])` with prepared statements. D1 `batch()` executes its statements sequentially as a transaction and aborts/rolls back the batch when a statement fails. Check the documented behavior of the current D1 API before implementation. Do not assume interactive `BEGIN`/`COMMIT` support. Keep the critical availability predicate in the conditional statement itself; a preceding SELECT alone is not concurrency protection.
 
 After a successful approval commit, enqueue the confirmation email. The send operation itself should occur after the database status change/outbox insertion, not inside a route-level pseudo-transaction.
+
+**Phase 7 implementation note (16 November 2026):** `AppointmentsRepository` owns managed list/detail reads and the conditional transitions. The approval `UPDATE` requires `status = 'pending'`, `start_at > now`, an active staff profile, a matching `staff_working_hours` interval, no overlapping `staff_time_off`, and no overlapping `confirmed` appointment, and it repeats those predicates even though the service performs a preflight. Reschedule and reassign reuse the same slot predicate; reassignment additionally requires the appointment's current `assigned_staff_user_id` so a concurrent reassignment cannot be overwritten. Each transition checks `meta.changes`; a zero-row update returns a safe `409` and does not write audit or invalidate tokens. After a successful approve, reject or cancel, `db.batch()` invalidates the appointment's live guest tokens and inserts the `audit_logs` row. Reschedule and reassignment audit without token invalidation because the appointment stays `pending`; a confirmed appointment has no live guest link. The preflight exists for clear 422/409 messages; the SQL remains the concurrency guard.
 
 ## 5. Schedule/service change safety
 

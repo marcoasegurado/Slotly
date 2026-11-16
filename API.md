@@ -202,6 +202,58 @@ Staff cannot reassign to another staff member. Staff may reject an assigned pend
 - `DELETE /api/staff/time-off/:id` returns `204` for the owner and `404 TIME_OFF_NOT_FOUND` otherwise.
 - These routes are staff-only; customer and admin sessions receive `403 FORBIDDEN`.
 
+### 4.2 Implemented staff appointment management
+
+`GET /api/staff/dashboard` returns the signed-in staff member's workload:
+
+```json
+{
+  "data": {
+    "pending": [],
+    "today": [],
+    "upcoming": [],
+    "counts": { "pending": 0, "today": 0, "confirmedUpcoming": 0 }
+  }
+}
+```
+
+`pending` contains every pending request assigned to that staff member, `today` contains today's pending/confirmed appointments in the business timezone, and `upcoming` contains only confirmed appointments whose end time is in the future. All lists are ordered by start time.
+
+`GET /api/staff/appointments` accepts optional `status` (`pending`, `confirmed`, `rejected`, `cancelled`, `all`) and `scope` (`all`, `today`, `upcoming`) query parameters. `GET /api/staff/appointments/:id` returns one assigned appointment. The `:id` value is the case-insensitive public `SLO-...` reference. An unknown reference or another staff member's appointment returns `404 APPOINTMENT_NOT_FOUND`.
+
+Staff management responses use the `ManagedAppointment` shape:
+
+```json
+{
+  "publicReference": "SLO-7K4M2QXP",
+  "serviceId": "svc_consult",
+  "serviceName": "Initial consultation",
+  "durationMinutes": 60,
+  "assignedStaff": { "id": "usr_ana", "name": "Ana Reyes", "email": "ana@slotly.studio" },
+  "customer": { "name": "Maria Santos", "email": "maria@example.com" },
+  "guestName": null,
+  "guestEmail": null,
+  "startAt": 1794880800,
+  "endAt": 1794884400,
+  "status": "pending",
+  "customerNote": "First visit",
+  "resolutionNote": null,
+  "createdAt": 1794794400,
+  "updatedAt": 1794794400,
+  "approvedAt": null,
+  "cancelledAt": null
+}
+```
+
+Guest appointments set `customer` to `null` and populate `guestName`/`guestEmail`. Internal appointment IDs and internal user IDs are not returned.
+
+- `POST /api/staff/appointments/:id/approve` approves only an assigned `pending` request whose start time is still in the future. It rechecks working hours, time off, the assigned staff member's active status and confirmed overlaps, then repeats those predicates inside the conditional `UPDATE`. Any failure returns `409 BOOKING_CONFLICT` and leaves the request pending. On success the appointment becomes `confirmed`, the approval timestamp and acting user are stored, and guest cancellation tokens are invalidated.
+- `POST /api/staff/appointments/:id/reject` accepts an optional `{ "reason" }` (trimmed, maximum 300 characters) and rejects only an assigned pending request. The default resolution note is `Declined by the team`. A non-pending appointment returns `409 BOOKING_CONFLICT`.
+- `POST /api/staff/appointments/:id/cancel` accepts an optional `{ "reason" }` and cancels only an assigned `confirmed` appointment. The default resolution note is `Cancelled by the team`. Pending requests must be rejected instead and return `409 BOOKING_CONFLICT`.
+- `PATCH /api/staff/appointments/:id` accepts `{ "startAt" }` (Unix seconds) and reschedules a pending or confirmed appointment within the staff member's own schedule. The assigned staff member cannot be changed. Past or outside-booking-window times return `422 VALIDATION_ERROR`; working-hours, time-off or confirmed-overlap failures return `409 BOOKING_CONFLICT`.
+- Every successful approve, reject, cancel and reschedule writes an `audit_logs` row. A reschedule keeps a pending appointment's guest cancellation link usable; only leaving `pending` invalidates it. Phase 7 intentionally does not insert `notification_outbox` rows; email intents start in Phase 8.
+
+
 ## 5. Admin routes
 
 | Method | Route | Purpose / rules |
@@ -227,6 +279,17 @@ Staff cannot reassign to another staff member. Staff may reject an assigned pend
 - `POST /api/admin/services` accepts `{ "name", "description"?, "durationMinutes", "isActive"? }` and returns `201` with the created service. Duration must be 1–1440 minutes.
 - `PATCH /api/admin/services/:id` updates any supplied subset of `name`, `description`, `durationMinutes` and `isActive`. An empty patch returns `422 VALIDATION_ERROR`.
 - Setting `isActive: false` returns `409 SERVICE_HAS_FUTURE_BOOKINGS` with `details.affectedBookings` while future `pending` or `confirmed` bookings reference the service. The service remains active.
+- These routes are admin-only; staff and customer sessions receive `403 FORBIDDEN`.
+
+### 5.2 Implemented appointment management
+
+- `GET /api/admin/appointments` lists every appointment in ascending start order. Optional query parameters: `status`, `staffId`, `serviceId`, `date` (business-local `YYYY-MM-DD`), `q` (reference, customer/guest name or email) and `limit` (1–200, default 100).
+- `GET /api/admin/appointments/:id` returns any appointment by its case-insensitive public `SLO-...` reference. Unknown references return `404 APPOINTMENT_NOT_FOUND`.
+- `POST /api/admin/appointments/:id/approve`, `POST /api/admin/appointments/:id/reject` and `PATCH /api/admin/appointments/:id` use the same validation and audit rules as the staff routes, but Admin can act on any staff member's appointment.
+- `POST /api/admin/appointments/:id/cancel` accepts an optional `{ "reason" }` and can cancel either a pending or a confirmed appointment. The default resolution note is `Cancelled by the team`.
+- `POST /api/admin/appointments/:id/reassign` accepts `{ "staffId", "startAt"? }`. The target must be an active staff member, so unknown or inactive staff return `404 STAFF_NOT_FOUND`; reassigning to the current staff member returns `422 VALIDATION_ERROR`. When `startAt` is omitted the current time is kept. The effective time must be in the future and inside the booking window (`422 VALIDATION_ERROR` otherwise), and the target's working hours, time off and confirmed appointments are revalidated (`409 BOOKING_CONFLICT`). The appointment keeps its pending/confirmed status.
+- `GET /api/admin/staff` returns only active staff `{ "id", "name", "email" }` entries for the reassignment control. Full staff account management remains a later phase.
+- Approve, reject, cancel, reschedule and reassign actions write an `audit_logs` row with the public appointment reference, actor, previous/new status and relevant staff/time changes. Guest cancellation tokens are invalidated when an appointment leaves `pending`.
 - These routes are admin-only; staff and customer sessions receive `403 FORBIDDEN`.
 
 
