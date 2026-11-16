@@ -48,6 +48,7 @@ Customers self-register as `customer`. No public staff/admin registration. Staff
 - Explicitly define weekday encoding (recommend 0=Sunday through 6=Saturday).
 - Allow multiple intervals per day. Validate `start_minute < end_minute` and prevent overlaps for the same staff/day in the service layer.
 - A closed day has no interval.
+- **Phase 5 implementation:** the schema uses `0 = Sunday … 6 = Saturday`, minutes from business-local midnight, and database CHECKs for weekday and minute bounds. Non-overlap is enforced by `parseWorkingHours` because SQLite cannot express it conveniently. `seed/local.sql` seeds demo hours for Ana, Ben and Ciel.
 
 ### `staff_time_off`
 
@@ -139,6 +140,8 @@ Before changing a staff member's weekly hours, adding time off, or deactivating 
 A staff member may edit their own schedule only when it does not invalidate an existing future appointment. If it does, return a conflict that directs them to ask Admin to resolve the affected bookings first.
 
 Before deactivating a service, find future pending/confirmed bookings using it. Block deactivation until each is resolved. Never silently replace the service, duration snapshot or price/meaning (if later introduced).
+
+**Phase 5 implementation note (16 November 2026):** `SchedulesRepository` loads only active staff, their working hours and overlapping time off, plus overlapping `confirmed` appointments for a business-local day. `ServicesRepository` lists future `pending`/`confirmed` bookings for deactivation checks. `findScheduleConflicts` evaluates a proposed weekly schedule or time-off change against future `pending`/`confirmed` appointments and returns safe `{ publicReference, status, startAt }` entries. Public availability uses half-open intervals, so a booking ending when another starts does not conflict.
 
 ## 6. Password hashing feasibility gate
 

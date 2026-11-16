@@ -14,6 +14,8 @@ Use local D1/test bindings. Never run destructive tests against production.
 
 ## 2. Availability and time calculation
 
+**Phase 5 coverage (16 November 2026):** `tests/availability.test.ts` covers DST-safe conversion, strict date keys, half-open overlaps, working-hour fitting, time off, confirmed-only blocking, future-start filtering, least-loaded staff selection and truthful states. `tests/schedules.test.ts` covers the D1 queries for active staff, time off, future appointments and service deactivation checks. `tests/phase5-api.test.ts` covers the public availability route, staff schedule/time-off routes with `409 SCHEDULE_CHANGE_CONFLICT`, and admin service CRUD with `409 SERVICE_HAS_FUTURE_BOOKINGS`.
+
 - Service duration calculates the correct end time.
 - Appointment fitting exactly inside one working interval is available.
 - Appointment starting before or ending after working hours is unavailable.

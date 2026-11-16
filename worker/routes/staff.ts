@@ -1,0 +1,214 @@
+import { Hono } from 'hono'
+import { requireAuth, requireRole } from '../auth/middleware'
+import type { AppEnv } from '../env'
+import { ApiError } from '../http/errors'
+import {
+  optionalNullableString,
+  readJsonObject,
+  requiredArray,
+  requiredInteger,
+} from '../http/validation'
+import { unixSeconds } from '../lib/time'
+import { BusinessSettingsRepository } from '../repositories/business-settings'
+import { SchedulesRepository } from '../repositories/schedules'
+import { findScheduleConflicts } from '../services/availability'
+import { parseWorkingHours } from '../services/schedule'
+import type { PublicBusiness, StaffSchedule } from '../types'
+
+const MAX_UNIX_SECONDS = 4_102_444_800 // 2100-01-01
+const MAX_TIME_OFF_REASON = 200
+
+export const staffRoutes = new Hono<AppEnv>()
+
+staffRoutes.use('*', requireAuth, requireRole('staff'))
+
+async function requireBusiness(db: D1Database): Promise<PublicBusiness> {
+  const business = await new BusinessSettingsRepository(db).getPublic()
+  if (!business) {
+    throw new ApiError(
+      500,
+      'BUSINESS_NOT_CONFIGURED',
+      'Business settings have not been configured.',
+    )
+  }
+  return business
+}
+
+async function requireSchedule(
+  db: D1Database,
+  staffUserId: string,
+): Promise<StaffSchedule> {
+  const schedule = await new SchedulesRepository(db).getSchedule(staffUserId)
+  if (!schedule) {
+    throw new ApiError(
+      404,
+      'STAFF_PROFILE_NOT_FOUND',
+      'This staff profile is not available.',
+    )
+  }
+  return schedule
+}
+
+staffRoutes.get('/availability', async (c) => {
+  const schedule = await requireSchedule(c.env.DB, c.get('user').id)
+  return c.json({ data: schedule })
+})
+
+staffRoutes.put('/availability', async (c) => {
+  const body = await readJsonObject(c)
+  const intervals = parseWorkingHours(
+    requiredArray(body, 'workingHours', 'weekly schedule'),
+  )
+
+  const schedule = await requireSchedule(c.env.DB, c.get('user').id)
+  const business = await requireBusiness(c.env.DB)
+  const repository = new SchedulesRepository(c.env.DB)
+  const now = new Date()
+  const nowUnix = unixSeconds(now.getTime())
+  const futureAppointments = await repository.listFutureAppointments(
+    c.get('user').id,
+    nowUnix,
+  )
+  const conflicts = findScheduleConflicts({
+    timezone: business.timezone,
+    staffId: c.get('user').id,
+    intervals,
+    timeOff: schedule.timeOff.map((entry) => ({
+      startAt: entry.startAt,
+      endAt: entry.endAt,
+    })),
+    appointments: futureAppointments.map((appointment) => ({
+      publicReference: appointment.publicReference,
+      status: appointment.status,
+      staffUserId: c.get('user').id,
+      startAt: appointment.startAt,
+      endAt: appointment.endAt,
+      durationMinutes: appointment.durationMinutes,
+    })),
+    now,
+  })
+
+  if (conflicts.length > 0) {
+    throw new ApiError(
+      409,
+      'SCHEDULE_CHANGE_CONFLICT',
+      'Resolve the affected bookings before changing your schedule.',
+      { affectedBookings: conflicts },
+    )
+  }
+
+  await repository.replaceWorkingHours(c.get('user').id, intervals)
+  return c.json({ data: await requireSchedule(c.env.DB, c.get('user').id) })
+})
+
+staffRoutes.post('/time-off', async (c) => {
+  const body = await readJsonObject(c)
+  const startAt = requiredInteger(
+    body,
+    'startAt',
+    'time-off start',
+    1,
+    MAX_UNIX_SECONDS,
+  )
+  const endAt = requiredInteger(
+    body,
+    'endAt',
+    'time-off end',
+    1,
+    MAX_UNIX_SECONDS,
+  )
+  const reason = optionalNullableString(
+    body,
+    'reason',
+    'time-off reason',
+    MAX_TIME_OFF_REASON,
+  )
+
+  if (endAt <= startAt) {
+    throw new ApiError(
+      422,
+      'VALIDATION_ERROR',
+      'The time-off end must be after its start.',
+    )
+  }
+
+  const now = new Date()
+  const nowUnix = unixSeconds(now.getTime())
+  if (endAt <= nowUnix) {
+    throw new ApiError(
+      422,
+      'VALIDATION_ERROR',
+      'Choose time off that has not already ended.',
+    )
+  }
+
+  const schedule = await requireSchedule(c.env.DB, c.get('user').id)
+  const business = await requireBusiness(c.env.DB)
+  const repository = new SchedulesRepository(c.env.DB)
+  const futureAppointments = await repository.listFutureAppointments(
+    c.get('user').id,
+    nowUnix,
+  )
+  const proposedTimeOff = [
+    ...schedule.timeOff.map((entry) => ({
+      startAt: entry.startAt,
+      endAt: entry.endAt,
+    })),
+    { startAt, endAt },
+  ]
+  const conflicts = findScheduleConflicts({
+    timezone: business.timezone,
+    staffId: c.get('user').id,
+    intervals: schedule.workingHours.map((entry) => ({
+      weekday: entry.weekday,
+      startMinute: entry.startMinute,
+      endMinute: entry.endMinute,
+    })),
+    timeOff: proposedTimeOff,
+    appointments: futureAppointments.map((appointment) => ({
+      publicReference: appointment.publicReference,
+      status: appointment.status,
+      staffUserId: c.get('user').id,
+      startAt: appointment.startAt,
+      endAt: appointment.endAt,
+      durationMinutes: appointment.durationMinutes,
+    })),
+    now,
+  })
+
+  if (conflicts.length > 0) {
+    throw new ApiError(
+      409,
+      'SCHEDULE_CHANGE_CONFLICT',
+      'Resolve the affected bookings before adding this time off.',
+      { affectedBookings: conflicts },
+    )
+  }
+
+  const created = await repository.addTimeOff({
+    staffUserId: c.get('user').id,
+    startAt,
+    endAt,
+    reason: reason ?? null,
+    now: nowUnix,
+  })
+
+  return c.json({ data: created }, 201)
+})
+
+staffRoutes.delete('/time-off/:id', async (c) => {
+  const id = c.req.param('id')
+  if (!id) {
+    throw new ApiError(404, 'TIME_OFF_NOT_FOUND', 'That time off was not found.')
+  }
+
+  const deleted = await new SchedulesRepository(c.env.DB).deleteTimeOff(
+    id,
+    c.get('user').id,
+  )
+  if (!deleted) {
+    throw new ApiError(404, 'TIME_OFF_NOT_FOUND', 'That time off was not found.')
+  }
+
+  return c.body(null, 204)
+})

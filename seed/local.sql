@@ -143,3 +143,30 @@ VALUES
   ('usr_ben'),
   ('usr_ciel')
 ON CONFLICT (user_id) DO NOTHING;
+
+-- Demo weekly schedules mirrored from the mock workspace.
+INSERT INTO staff_working_hours (
+  id, staff_user_id, weekday, start_minute, end_minute
+)
+VALUES
+  ('hrs_ana_mon', 'usr_ana', 1, 540, 1020),
+  ('hrs_ana_tue', 'usr_ana', 2, 540, 1020),
+  ('hrs_ana_wed', 'usr_ana', 3, 540, 1020),
+  ('hrs_ana_thu', 'usr_ana', 4, 540, 1020),
+  ('hrs_ana_fri', 'usr_ana', 5, 540, 1020),
+  ('hrs_ben_tue', 'usr_ben', 2, 600, 1080),
+  ('hrs_ben_wed', 'usr_ben', 3, 600, 1080),
+  ('hrs_ben_thu', 'usr_ben', 4, 600, 1080),
+  ('hrs_ben_fri', 'usr_ben', 5, 600, 1080),
+  ('hrs_ben_sat', 'usr_ben', 6, 600, 1080),
+  ('hrs_ciel_mon_am', 'usr_ciel', 1, 480, 720),
+  ('hrs_ciel_mon_pm', 'usr_ciel', 1, 780, 1020),
+  ('hrs_ciel_wed_am', 'usr_ciel', 3, 480, 720),
+  ('hrs_ciel_wed_pm', 'usr_ciel', 3, 780, 1020),
+  ('hrs_ciel_fri_am', 'usr_ciel', 5, 480, 720),
+  ('hrs_ciel_fri_pm', 'usr_ciel', 5, 780, 1020)
+ON CONFLICT (id) DO UPDATE SET
+  staff_user_id = excluded.staff_user_id,
+  weekday = excluded.weekday,
+  start_minute = excluded.start_minute,
+  end_minute = excluded.end_minute;

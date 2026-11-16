@@ -1,6 +1,6 @@
 # Slotly
 
-Appointment booking for one small business. The React/Vite UI runs against an in-memory mock repository for booking, customer and staff flows. Phase 3 adds the Cloudflare Worker, Hono API and D1 schema foundation, and Phase 4 adds password hashing, D1-backed sessions, role middleware and auth routes. The public business/services reads are wired to the Worker; the other client flows remain mock-backed until their API phases.
+Appointment booking for one small business. The React/Vite UI runs against an in-memory mock repository for booking, customer and staff flows. Phase 3 adds the Cloudflare Worker, Hono API and D1 schema foundation, Phase 4 adds password hashing, D1-backed sessions, role middleware and auth routes, and Phase 5 adds service management, staff schedules and the availability engine. The public business/services reads are wired to the Worker; the other client flows remain mock-backed until their API phases.
 
 ## Run locally
 
@@ -52,7 +52,7 @@ The Vite proxy preserves the browser origin, so requests from `http://localhost:
 | Staff | `ciel@slotly.studio` | `slotly-demo` |
 | Admin | `admin@slotly.studio` | `slotly-demo` |
 
-These accounts exist in the local D1 seed with PBKDF2 hashes; the seed never contains plaintext passwords. Guests can book without an account. A guest cancellation link is shown on the request-received page.
+These accounts exist in the local D1 seed with PBKDF2 hashes; the seed never contains plaintext passwords. The seed also gives Ana, Ben and Ciel demo weekly working hours so availability and schedule endpoints have realistic data. Guests can book without an account. A guest cancellation link is shown on the request-received page.
 
 The mock UI still uses its own in-memory demo sign-in. The Worker auth routes are exercised directly or through the API until the client auth flow is wired in a later phase.
 
@@ -84,6 +84,14 @@ Authentication and sessions (Phase 4, backend):
 - Local demo users with hashed passwords. Regenerate them with `npm run auth:hash:demo`; benchmark hashing with `npm run auth:bench`.
 - The UI does not yet use the auth routes; the mock sign-in remains in place until the client integration phase.
 
+Services, schedules and availability (Phase 5, backend):
+
+- `GET /api/public/availability` returns 15-minute Unix-second slots for an active service and business-local date. Only `confirmed` appointments block availability; `pending` requests do not. Public slots omit the assigned staff member.
+- The availability engine fits the full service duration inside working hours, excludes time off and confirmed overlaps, ignores past starts and selects the least-loaded eligible staff member.
+- `GET`/`PUT /api/staff/availability`, `POST /api/staff/time-off` and `DELETE /api/staff/time-off/:id` manage the signed-in staff member's schedule. A change that would invalidate a future `pending` or `confirmed` booking returns `409 SCHEDULE_CHANGE_CONFLICT` with safe affected booking references.
+- `GET`/`POST /api/admin/services` and `PATCH /api/admin/services/:id` manage services. Deactivation returns `409 SERVICE_HAS_FUTURE_BOOKINGS` while future bookings remain.
+- DST-safe business-timezone conversion, half-open overlap rules and the schedule-conflict rules are covered by unit, repository and API tests.
+
 Mock UI (still in memory):
 
 - Public service/date/time selection, guest booking and customer booking.
@@ -97,14 +105,15 @@ Mock UI (still in memory):
 - Pending requests never block customer availability; approval rechecks hours, time off and confirmed overlaps.
 - Staff cannot reassign appointments or view another staff member's assignments.
 
-Deferred: admin workspace/reassignment, staff account management, service management, settings, reports/CSV and the email outbox.
+Deferred: admin workspace/reassignment, staff account management, settings, reports/CSV and the email outbox. Admin service management exists in the backend API but has no UI yet.
 
 ## Source layout
 
-- `worker/` — Hono app, auth/public routes, middleware, error envelope and typed D1 repositories.
+- `worker/` — Hono app, auth/public/staff/admin routes, middleware, error envelope, availability engine and typed D1 repositories.
 - `worker/auth/` — password hashing, session cookies, role middleware and rate limiting.
+- `worker/services/` — availability calculation, schedule validation and availability-context loading.
 - `migrations/` — ordered D1 schema migrations; never edit an applied migration.
-- `seed/local.sql` — local-only sample business settings, services and hashed demo accounts.
+- `seed/local.sql` — local-only sample business settings, services, hashed demo accounts and demo working hours.
 - `scripts/` — local password-hash generation and PBKDF2 benchmark commands.
 - `tests/` — schema, repository, auth and Worker API tests using an in-memory D1 adapter.
 - `src/mock/` — in-memory repository and seed data with API-shaped functions.

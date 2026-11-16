@@ -1,6 +1,6 @@
 # Slotly API Contract
 
-**Status:** Phase 3 foundation and Phase 4 authentication are implemented on the Hono Worker. The public business/services reads are wired into the React client; other client flows remain mock-backed until their API phases. Align this contract with the actual implementation as routes are built, keep route handlers thin and enforce all authorization on the server.
+**Status:** Phase 3 foundation, Phase 4 authentication, and the Phase 5 services/schedules/availability backend are implemented on the Hono Worker. The public business/services reads are wired into the React client; other client flows remain mock-backed until their API phases. Align this contract with the actual implementation as routes are built, keep route handlers thin and enforce all authorization on the server.
 
 ## 1. Conventions
 
@@ -19,7 +19,8 @@
 ```
 
 - Operational check: `GET /api/health` returns `{ "data": { "status": "ok", "service": "slotly-api", "environment": "...", "timestamp": 0 } }`, where `timestamp` is Unix seconds. It returns `503 DATABASE_UNAVAILABLE` when D1 cannot be queried.
-- Implemented: `/api/health`, `/api/public/business`, `/api/public/services` and the `/api/auth/*` routes in section 3. The remaining routes below are contracts for later phases.
+- Implemented: `/api/health`, `/api/public/business`, `/api/public/services`, `/api/public/availability`, the `/api/auth/*` routes in section 3, the staff schedule/time-off routes in section 4 and the admin service routes in section 5. The remaining routes below are contracts for later phases.
+- API instants (`startAt`, `endAt`) are integer Unix seconds. Business-local dates are `YYYY-MM-DD` in the configured IANA timezone.
 - Authenticated requests use the opaque `slotly_session` cookie. The cookie is `HttpOnly`, `SameSite=Lax`, `Path=/`, has a 7-day TTL and is `Secure` on HTTPS or in production. D1 stores only the SHA-256 hash of the token.
 - Mutating requests (`POST`, `PUT`, `PATCH`, `DELETE`) must send an `Origin` header that exactly matches the request origin; otherwise the API returns `403 CSRF_REJECTED`. Safe reads do not require an `Origin` header.
 
@@ -39,6 +40,26 @@
 | `POST` | `/api/public/guest-cancellation` | Body includes private token; cancel only the associated pending guest booking; generic invalid/used/expired response |
 
 The guest link opens a read-only page through a route such as `/cancel/:token`. A GET must never mutate booking state. The page must show a confirmation step and submit an explicit POST to cancel. Set `Referrer-Policy: no-referrer`, `Cache-Control: no-store` and `X-Robots-Tag: noindex, nofollow`; redact the token from access logs and do not load third-party analytics/assets. The raw token must never be put into analytics or ordinary logs.
+
+### 2.1 Implemented availability behavior
+
+`GET /api/public/availability?serviceId=...&date=YYYY-MM-DD` requires an active service and a valid business-local date. It returns:
+
+```json
+{
+  "data": {
+    "dateKey": "2026-11-17",
+    "state": "open",
+    "slots": [{ "startAt": 1794877200, "endAt": 1794880800 }]
+  }
+}
+```
+
+- `state` is one of `past`, `outside-booking-window`, `closed`, `open` or `full`.
+- Slot starts advance in 15-minute steps and the full service duration must fit inside one working interval. A slot start must be strictly in the future.
+- Slots are integer Unix seconds and intentionally omit the assigned staff member. Least-loaded staff selection happens server-side.
+- Only `confirmed` appointments block availability. `pending` requests never reserve a slot.
+- Invalid service or date input returns `422 VALIDATION_ERROR`; a missing or inactive service returns `404 SERVICE_NOT_FOUND`. When business settings are missing, the route returns `404 BUSINESS_NOT_CONFIGURED`.
 
 ## 3. Authentication and customer routes
 
@@ -101,6 +122,31 @@ Role middleware additionally returns `403 FORBIDDEN` when the authenticated role
 
 Staff cannot reassign to another staff member. Staff may reject an assigned pending request, cancel an assigned confirmed appointment when permitted, or reschedule within their own schedule. In an approval conflict, staff may choose another available time for their own schedule or reject the request. A different staff assignment is an Admin-only operation.
 
+### 4.1 Implemented schedule behavior
+
+`GET /api/staff/availability` returns the signed-in staff member's schedule:
+
+```json
+{
+  "data": {
+    "staff": { "id": "usr_ana", "name": "Ana Reyes", "email": "ana@slotly.studio" },
+    "workingHours": [
+      { "id": "hrs_x", "weekday": 1, "startMinute": 540, "endMinute": 1020 }
+    ],
+    "timeOff": [
+      { "id": "tof_x", "startAt": 1794877200, "endAt": 1794880800, "reason": "Training" }
+    ]
+  }
+}
+```
+
+- `weekday` is `0` (Sunday) through `6` (Saturday); minutes are from midnight in the business timezone.
+- `PUT /api/staff/availability` accepts `{ "workingHours": [{ "weekday", "startMinute", "endMinute" }] }`, replaces the whole weekly schedule and returns the updated schedule. Intervals may not overlap on the same weekday; adjacent intervals are allowed.
+- Working-hours and time-off changes return `409 SCHEDULE_CHANGE_CONFLICT` with `details.affectedBookings` when the change would invalidate a future `pending` or `confirmed` appointment for that staff member. The change is not applied.
+- `POST /api/staff/time-off` accepts Unix-second `{ "startAt", "endAt", "reason"? }`; the end must be after the start and not already in the past. It returns `201` with the created time off.
+- `DELETE /api/staff/time-off/:id` returns `204` for the owner and `404 TIME_OFF_NOT_FOUND` otherwise.
+- These routes are staff-only; customer and admin sessions receive `403 FORBIDDEN`.
+
 ## 5. Admin routes
 
 | Method | Route | Purpose / rules |
@@ -119,6 +165,15 @@ Staff cannot reassign to another staff member. Staff may reject an assigned pend
 | `GET` / `PUT` | `/api/admin/settings` | Read/update business profile, timezone and max advance booking window |
 | `GET` | `/api/admin/reports/summary` | Aggregated data using current report filters |
 | `GET` | `/api/admin/reports/export.csv` | Admin-only CSV with same filters as report; protect against formula injection |
+
+### 5.1 Implemented service management
+
+- `GET /api/admin/services` lists active and inactive services.
+- `POST /api/admin/services` accepts `{ "name", "description"?, "durationMinutes", "isActive"? }` and returns `201` with the created service. Duration must be 1–1440 minutes.
+- `PATCH /api/admin/services/:id` updates any supplied subset of `name`, `description`, `durationMinutes` and `isActive`. An empty patch returns `422 VALIDATION_ERROR`.
+- Setting `isActive: false` returns `409 SERVICE_HAS_FUTURE_BOOKINGS` with `details.affectedBookings` while future `pending` or `confirmed` bookings reference the service. The service remains active.
+- These routes are admin-only; staff and customer sessions receive `403 FORBIDDEN`.
+
 
 ## 6. Schedule and service change conflicts
 

@@ -2,9 +2,11 @@ import { Hono } from 'hono'
 import type { AppEnv } from './env'
 import { ApiError, apiError } from './http/errors'
 import { sameOriginGuard } from './http/csrf'
+import { adminRoutes } from './routes/admin'
 import { authRoutes } from './routes/auth'
 import { healthRoutes } from './routes/health'
 import { publicRoutes } from './routes/public'
+import { staffRoutes } from './routes/staff'
 
 export function createApp() {
   const app = new Hono<AppEnv>()
@@ -20,6 +22,8 @@ export function createApp() {
   app.route('/api', healthRoutes)
   app.route('/api/public', publicRoutes)
   app.route('/api/auth', authRoutes)
+  app.route('/api/staff', staffRoutes)
+  app.route('/api/admin', adminRoutes)
 
   app.notFound((c) =>
     apiError(c, 404, 'NOT_FOUND', 'The requested resource was not found.'),

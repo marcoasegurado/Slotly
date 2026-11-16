@@ -4,6 +4,7 @@
  */
 
 export type UserRole = 'customer' | 'staff' | 'admin'
+export type AppointmentStatus = 'pending' | 'confirmed' | 'rejected' | 'cancelled'
 
 export interface AuthUser {
   id: string
@@ -26,4 +27,58 @@ export interface PublicService {
   description: string | null
   durationMinutes: number
   isActive: boolean
+}
+
+export type AvailabilityState =
+  | 'past'
+  | 'outside-booking-window'
+  | 'closed'
+  | 'open'
+  | 'full'
+
+/** Public slots intentionally omit the assigned staff member. */
+export interface AvailabilitySlot {
+  /** Unix seconds. */
+  startAt: number
+  /** Unix seconds. */
+  endAt: number
+}
+
+export interface PublicDayAvailability {
+  dateKey: string
+  state: AvailabilityState
+  slots: AvailabilitySlot[]
+}
+
+export interface WorkingHour {
+  id: string
+  weekday: number
+  startMinute: number
+  endMinute: number
+}
+
+export interface TimeOff {
+  id: string
+  /** Unix seconds. */
+  startAt: number
+  /** Unix seconds. */
+  endAt: number
+  reason: string | null
+}
+
+export interface StaffSchedule {
+  staff: {
+    id: string
+    name: string
+    email: string
+  }
+  workingHours: WorkingHour[]
+  timeOff: TimeOff[]
+}
+
+export interface AffectedBooking {
+  publicReference: string
+  status: AppointmentStatus
+  /** Unix seconds. */
+  startAt: number
 }
