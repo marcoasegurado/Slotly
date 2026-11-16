@@ -1,11 +1,13 @@
 import { Hono } from 'hono'
-import type { Env } from './env'
+import type { AppEnv } from './env'
 import { ApiError, apiError } from './http/errors'
+import { sameOriginGuard } from './http/csrf'
+import { authRoutes } from './routes/auth'
 import { healthRoutes } from './routes/health'
 import { publicRoutes } from './routes/public'
 
 export function createApp() {
-  const app = new Hono<{ Bindings: Env }>()
+  const app = new Hono<AppEnv>()
 
   app.use('*', async (c, next) => {
     await next()
@@ -13,8 +15,11 @@ export function createApp() {
     c.header('X-Content-Type-Options', 'nosniff')
   })
 
+  app.use('*', sameOriginGuard)
+
   app.route('/api', healthRoutes)
   app.route('/api/public', publicRoutes)
+  app.route('/api/auth', authRoutes)
 
   app.notFound((c) =>
     apiError(c, 404, 'NOT_FOUND', 'The requested resource was not found.'),

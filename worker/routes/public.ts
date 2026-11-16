@@ -1,10 +1,10 @@
 import { Hono } from 'hono'
-import type { Env } from '../env'
+import type { AppEnv } from '../env'
 import { apiError } from '../http/errors'
 import { BusinessSettingsRepository } from '../repositories/business-settings'
 import { ServicesRepository } from '../repositories/services'
 
-export const publicRoutes = new Hono<{ Bindings: Env }>()
+export const publicRoutes = new Hono<AppEnv>()
 
 publicRoutes.get('/business', async (c) => {
   const business = await new BusinessSettingsRepository(c.env.DB).getPublic()

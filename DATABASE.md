@@ -20,7 +20,7 @@
 | `id` | Primary key; opaque/non-sequential ID |
 | `name` | Required display name |
 | `email` | Required, normalized, unique |
-| `password_hash` | Recognized password hash only; never plaintext |
+| `password_hash` | Versioned `pbkdf2-sha256$v1$<iterations>$<salt-hex>$<hash-hex>` value; never plaintext |
 | `role` | CHECK: `customer`, `staff`, `admin` |
 | `is_active` | Boolean; inactive users cannot authenticate/receive assignments |
 | `must_change_password` | Boolean; true after Admin creates/resets a staff temporary password |
@@ -83,7 +83,7 @@ Single-row singleton configuration: fixed `id`, `business_name`, optional `busin
 
 ### `sessions`
 
-If D1 stores sessions: `id`, `user_id` FK, unique `session_token_hash`, `expires_at`, `created_at`, nullable `revoked_at`. Never store the raw cookie token.
+Sessions are D1-backed: `id`, `user_id` FK, unique `session_token_hash`, `expires_at`, `created_at`, nullable `revoked_at`. Never store the raw cookie token. The Worker issues a random 32-byte token in the `slotly_session` cookie and stores only its SHA-256 hex hash; sessions expire after 7 days and are revoked on logout, password change or temporary-password expiry.
 
 ### `notification_outbox`
 
@@ -149,6 +149,8 @@ Before choosing the password-hashing implementation:
 - Benchmark registration/login/reset under the actual Workers plan. Current Cloudflare documentation lists a 10 ms CPU limit per HTTP request on Workers Free; CPU-intensive password hashing may exceed this. Do not respond by weakening the work factor without a security review.
 - Verify whether any proposed bcrypt/Argon2 package works in the deployed Workers runtime and its WASM/CPU characteristics. Do not assume Node-native dependencies will work.
 - Record the chosen algorithm/version/parameters with each stored hash so parameters can be upgraded. Never use plain SHA-256/SHA-512 as a password hash.
+
+**Phase 4 implementation note (16 November 2026):** The Worker uses WebCrypto PBKDF2-HMAC-SHA-256 with a 16-byte random salt, a 32-byte derived key and 210,000 iterations in the versioned format above. `npm run auth:bench` measured roughly 250–300 ms per hash/verify on the development machine (Node WebCrypto). That exceeds the Workers Free plan's 10 ms CPU limit, so the production Workers plan and final iteration count must be validated before deployment. The version prefix allows a later parameter upgrade without changing the schema.
 
 Official references (re-check on implementation):
 - [D1 Database API and `batch()`](https://developers.cloudflare.com/d1/worker-api/d1-database/)

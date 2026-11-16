@@ -1,6 +1,6 @@
 # Slotly API Contract
 
-**Status:** Implemented foundation for Phase 3+; align this contract with the actual Hono implementation as routes are built. Keep route handlers thin and enforce all authorization on the server.
+**Status:** Phase 3 foundation and Phase 4 authentication are implemented on the Hono Worker. The public business/services reads are wired into the React client; other client flows remain mock-backed until their API phases. Align this contract with the actual implementation as routes are built, keep route handlers thin and enforce all authorization on the server.
 
 ## 1. Conventions
 
@@ -19,7 +19,9 @@
 ```
 
 - Operational check: `GET /api/health` returns `{ "data": { "status": "ok", "service": "slotly-api", "environment": "...", "timestamp": 0 } }`, where `timestamp` is Unix seconds. It returns `503 DATABASE_UNAVAILABLE` when D1 cannot be queried.
-- Phase 3 implements only `/api/health`, `/api/public/business` and `/api/public/services`. The remaining routes below are contracts for later phases.
+- Implemented: `/api/health`, `/api/public/business`, `/api/public/services` and the `/api/auth/*` routes in section 3. The remaining routes below are contracts for later phases.
+- Authenticated requests use the opaque `slotly_session` cookie. The cookie is `HttpOnly`, `SameSite=Lax`, `Path=/`, has a 7-day TTL and is `Secure` on HTTPS or in production. D1 stores only the SHA-256 hash of the token.
+- Mutating requests (`POST`, `PUT`, `PATCH`, `DELETE`) must send an `Origin` header that exactly matches the request origin; otherwise the API returns `403 CSRF_REJECTED`. Safe reads do not require an `Origin` header.
 
 - Validate bodies, params and query strings server-side. Use prepared statements.
 - Status codes: `200` read/update success, `201` created, `204` successful no-content action, `400` malformed request, `401` unauthenticated, `403` forbidden, `404` unavailable/not found, `409` state/availability conflict, `422` validation failure, `429` rate limited, `500` generic internal error.
@@ -52,6 +54,34 @@ The guest link opens a read-only page through a route such as `/cancel/:token`. 
 | `POST` | `/api/customer/bookings/:id/cancel` | Cancel own pending booking only; confirmed booking is not self-cancellable in MVP |
 
 Do not build a self-service forgotten-password flow in the MVP. Staff password reset is an Admin action (below).
+
+### 3.1 Implemented auth behavior
+
+`POST /api/auth/register` accepts `{ "name", "email", "password" }`. It always creates a `customer`, normalizes the email to lower case, requires a password of 8–128 characters and returns `201` with the `AuthUser` shape. Duplicate emails return `409 EMAIL_IN_USE`.
+
+`POST /api/auth/login` accepts `{ "email", "password" }` and returns `200` with:
+
+```json
+{
+  "data": {
+    "id": "usr_...",
+    "name": "Maria Santos",
+    "email": "maria@example.com",
+    "role": "customer",
+    "mustChangePassword": false
+  }
+}
+```
+
+Wrong passwords, unknown emails, inactive accounts and expired temporary passwords all return the same `401 INVALID_CREDENTIALS` response. Repeated login failures are limited per email and per client IP; the response is `429 RATE_LIMITED` with `Retry-After` and `details.retryAfterSeconds`. This limiter is currently per Worker isolate and is best-effort until durable cross-isolate limiting is added.
+
+`POST /api/auth/logout` revokes the current session and clears the cookie. It returns `204` even without a valid session.
+
+`GET /api/auth/me` requires a session and returns the same `AuthUser` shape.
+
+`POST /api/auth/change-password` accepts `{ "currentPassword", "newPassword" }`, requires the current password, applies the same length policy, rejects reuse of the current password and revokes the user's other sessions. It returns `204`. If a temporary password has expired, the route revokes all of the user's sessions and returns `401 UNAUTHENTICATED`.
+
+Role middleware additionally returns `403 FORBIDDEN` when the authenticated role is not allowed and `403 PASSWORD_CHANGE_REQUIRED` when a staff/admin account still has `mustChangePassword = true`.
 
 ## 4. Staff routes
 

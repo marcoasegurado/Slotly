@@ -3,6 +3,16 @@
  * these camelCase types are the contract shared with the React client.
  */
 
+export type UserRole = 'customer' | 'staff' | 'admin'
+
+export interface AuthUser {
+  id: string
+  name: string
+  email: string
+  role: UserRole
+  mustChangePassword: boolean
+}
+
 export interface PublicBusiness {
   businessName: string
   businessEmail: string | null
