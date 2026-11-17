@@ -20,6 +20,7 @@ import {
   cancelGuestBooking,
   createBooking,
 } from '../services/bookings'
+import { dispatchEmailById } from '../services/notifications'
 
 const BOOKING_RATE_LIMIT = 20
 const BOOKING_RATE_WINDOW_MS = 60 * 60 * 1000
@@ -135,11 +136,13 @@ publicRoutes.post('/bookings', async (c) => {
   )
 
   let customerUserId: string | null = null
+  let customerEmail: string | null = null
   let guestName: string | null = null
   let guestEmail: string | null = null
 
   if (session?.user.role === 'customer') {
     customerUserId = session.user.id
+    customerEmail = session.user.email
   } else {
     guestName = requiredString(body, 'guestName', 'your full name', 2, 100)
     guestEmail = normalizeEmail(
@@ -150,20 +153,26 @@ publicRoutes.post('/bookings', async (c) => {
     }
   }
 
-  const result = await createBooking(
+  const outcome = await createBooking(
     c.env.DB,
     {
       serviceId,
       startAt,
       customerUserId,
+      customerEmail,
       guestName,
       guestEmail,
       customerNote,
+      requestOrigin: new URL(c.req.url).origin,
     },
     now,
   )
 
-  return c.json({ data: result }, 201)
+  if (outcome.notificationId) {
+    await dispatchEmailById(c.env, outcome.notificationId)
+  }
+
+  return c.json({ data: outcome.result }, 201)
 })
 
 publicRoutes.post('/guest-cancellation', async (c) => {

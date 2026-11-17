@@ -14,6 +14,21 @@ run_worker_first = ["/api/*"]
 
 [vars]
 ENVIRONMENT = "development"
+# Verified sender used by transactional email. Replace with a real verified
+# address/domain before deployment; local development uses this safe default.
+EMAIL_FROM = "Slotly <hello@slotly.studio>"
+# Optional Reply-To fallback when business settings have no business email.
+# EMAIL_REPLY_TO = "hello@slotly.studio"
+# Delivery selection: `console` (local), `resend` (requires RESEND_API_KEY),
+# or `none`. Leave unset to use Resend when a key exists and the console
+# transport otherwise. Set RESEND_API_KEY via `.dev.vars` locally or
+# `wrangler secret put RESEND_API_KEY` at deployment; never commit it.
+# EMAIL_TRANSPORT = "console"
+
+# Retry undelivered/pending email every 15 minutes. Deployment is Phase 10, so
+# this trigger is local configuration only until then.
+[triggers]
+crons = ["*/15 * * * *"]
 
 # Local development only. `wrangler dev` and `wrangler d1 --local` use the
 # local Miniflare database and never contact this ID. A real UUID will be set

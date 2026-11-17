@@ -1,3 +1,7 @@
+import type {
+  BookingUpdateAction,
+  EmailEventType,
+} from '../email/contract'
 import { ApiError } from '../http/errors'
 import {
   dateKeyUnixRange,
@@ -18,6 +22,7 @@ import { AuditRepository } from '../repositories/audit'
 import { SchedulesRepository } from '../repositories/schedules'
 import { requireBusinessSettings } from './business'
 import { validateStaffSlot } from './availability'
+import { buildNotificationStatement } from './notifications'
 import type {
   AppointmentStatus,
   ManagedAppointment,
@@ -235,13 +240,16 @@ interface TransitionAuditInput {
   now: number
   /** Only transitions that leave `pending` invalidate guest cancellation links. */
   invalidateGuestTokens: boolean
+  /** Optional outbox insert committed with the audit row. */
+  notification: D1PreparedStatement | null
 }
 
 /**
- * Token invalidation and the audit row are written only after the conditional
- * state change succeeded. Status alone already disables guest token lookups, so
- * this batch is cleanup and traceability, not the primary guard. Reschedule and
- * reassignment keep the appointment pending, so its guest link stays usable.
+ * Token invalidation, the email intent and the audit row are written only after
+ * the conditional state change succeeded. Status alone already disables guest
+ * token lookups, so this batch is cleanup and traceability, not the primary
+ * guard. Reschedule and reassignment keep the appointment pending, so its guest
+ * link stays usable.
  */
 async function recordTransition(
   db: D1Database,
@@ -256,6 +264,9 @@ async function recordTransition(
       ),
     )
   }
+  if (input.notification) {
+    statements.push(input.notification)
+  }
   statements.push(
     new AuditRepository(db).statement({
       actorUserId: input.actorUserId,
@@ -268,6 +279,32 @@ async function recordTransition(
   )
 
   await db.batch(statements)
+}
+
+/** Outbox insert for the customer-facing email of this transition. */
+function notificationFor(
+  db: D1Database,
+  record: ManagedAppointmentRecord,
+  eventType: EmailEventType,
+  payload: {
+    action?: BookingUpdateAction
+    previousStartAt?: number
+    previousEndAt?: number
+    resolutionNote?: string | null
+  },
+  now: number,
+): D1PreparedStatement | null {
+  return buildNotificationStatement(
+    db,
+    {
+      appointmentId: record.id,
+      customerEmail: record.customer?.email ?? null,
+      guestEmail: record.guestEmail,
+    },
+    eventType,
+    payload,
+    now,
+  )
 }
 
 async function reloadForStaff(
@@ -494,6 +531,13 @@ async function approveRecord(
       startAt: record.startAt,
     },
     invalidateGuestTokens: true,
+    notification: notificationFor(
+      db,
+      record,
+      'booking_confirmed',
+      {},
+      nowUnix,
+    ),
     now: nowUnix,
   })
 }
@@ -570,6 +614,13 @@ async function rejectRecord(
       resolutionNote: note,
     },
     invalidateGuestTokens: true,
+    notification: notificationFor(
+      db,
+      record,
+      'booking_update',
+      { action: 'rejected', resolutionNote: note },
+      nowUnix,
+    ),
     now: nowUnix,
   })
 }
@@ -656,6 +707,13 @@ async function cancelRecord(
       resolutionNote: note,
     },
     invalidateGuestTokens: true,
+    notification: notificationFor(
+      db,
+      record,
+      'booking_update',
+      { action: 'cancelled', resolutionNote: note },
+      nowUnix,
+    ),
     now: nowUnix,
   })
 }
@@ -752,6 +810,17 @@ async function rescheduleRecord(
       newEndAt: validation.endAt,
     },
     invalidateGuestTokens: false,
+    notification: notificationFor(
+      db,
+      record,
+      'booking_update',
+      {
+        action: 'rescheduled',
+        previousStartAt: record.startAt,
+        previousEndAt: record.endAt,
+      },
+      nowUnix,
+    ),
     now: nowUnix,
   })
 }
@@ -876,6 +945,17 @@ export async function reassignAdminAppointment(
       newEndAt: validation.endAt,
     },
     invalidateGuestTokens: false,
+    notification: notificationFor(
+      db,
+      record,
+      'booking_update',
+      {
+        action: 'reassigned',
+        previousStartAt: record.startAt,
+        previousEndAt: record.endAt,
+      },
+      nowUnix,
+    ),
     now: nowUnix,
   })
 

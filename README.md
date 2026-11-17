@@ -1,6 +1,6 @@
 # Slotly
 
-Appointment booking for one small business. The React/Vite UI runs against an in-memory mock repository for booking, customer and staff flows. Phase 3 adds the Cloudflare Worker, Hono API and D1 schema foundation, Phase 4 adds password hashing, D1-backed sessions, role middleware and auth routes, Phase 5 adds service management, staff schedules and the availability engine, Phase 6 adds guest/customer booking creation and cancellation, and Phase 7 adds staff approval/rejection/rescheduling plus admin reassignment. The public business/services reads are wired to the Worker; the other client flows remain mock-backed until their API phases.
+Appointment booking for one small business. The React/Vite UI runs against an in-memory mock repository for booking, customer and staff flows. Phase 3 adds the Cloudflare Worker, Hono API and D1 schema foundation, Phase 4 adds password hashing, D1-backed sessions, role middleware and auth routes, Phase 5 adds service management, staff schedules and the availability engine, Phase 6 adds guest/customer booking creation and cancellation, Phase 7 adds staff approval/rejection/rescheduling plus admin reassignment, and Phase 8 adds transactional email through a D1 outbox with inline sends and scheduled retries. The public business/services reads are wired to the Worker; the other client flows remain mock-backed until their API phases.
 
 ## Run locally
 
@@ -108,8 +108,17 @@ Staff and admin appointment management (Phase 7, backend):
 - `PATCH /api/staff/appointments/:id` accepts only a new `startAt`. Staff cannot change the assigned staff member.
 - Admin can list/filter every appointment, read any appointment, approve/reject/reschedule it, cancel pending or confirmed appointments, and reassign to another active staff member through `POST /api/admin/appointments/:id/reassign`.
 - Reassignment validates the target staff member, working hours, time off, booking window and confirmed overlaps, and is audited. `GET /api/admin/staff` returns the read-only active-staff list used by the reassignment control.
-- Approval/rejection/cancellation invalidates any guest cancellation token for that appointment. Audit rows are written for approve, reject, cancel, reschedule and reassign. Notification outbox rows remain Phase 8 work.
+- Approval/rejection/cancellation invalidates any guest cancellation token for that appointment. Audit rows are written for approve, reject, cancel, reschedule and reassign.
 - The schedule, time-off and confirmed-overlap predicates are repeated inside the conditional `UPDATE`; the preflight checks provide clear errors, while the SQL remains the concurrency backstop.
+
+Transactional email (Phase 8, backend):
+
+- Exactly three customer-facing emails: `request_received`, `booking_confirmed` and `booking_update`. Rejection, staff/admin cancellation, staff/admin reschedule and admin reassignment all send `booking_update`; customer/guest self-cancellation sends nothing.
+- Each email intent is written to `notification_outbox` in the same D1 batch as the booking insert or transition audit row, so the message and the database change cannot diverge.
+- After the commit the Worker attempts delivery immediately. A provider failure is recorded on the row and never rolls back the booking or appointment change; the scheduled handler retries `pending`/`failed` rows every 15 minutes, up to 5 attempts, and reclaims `sending` rows abandoned for 15 minutes.
+- The guest `request_received` email carries the private `/cancel/:token` link. Once sent, the stored payload drops the cancellation URL so the raw token is not kept at rest; the outbox never stores the token hash or other secrets.
+- Transport selection: `EMAIL_TRANSPORT` (`console`, `resend`, `none`), otherwise Resend when `RESEND_API_KEY` is set, otherwise the console transport, with a silent no-op in tests. `EMAIL_FROM` defaults to a safe placeholder, and replies fall back to the business email.
+- Resend is the production provider. Put `RESEND_API_KEY` in `.dev.vars` locally or set it with `wrangler secret put` at deployment; the key and any real sender domain are not committed. The `*/15` cron trigger in `wrangler.toml` is local configuration until Phase 10.
 
 Mock UI (still in memory):
 
@@ -124,14 +133,15 @@ Mock UI (still in memory):
 - Pending requests never block customer availability; approval rechecks hours, time off and confirmed overlaps.
 - Staff cannot reassign appointments or view another staff member's assignments.
 
-Deferred: admin workspace UI, admin-issued staff passwords/forced password change, staff account management, settings, reports/CSV and the email outbox. Admin service and appointment management exist in the backend API but have no UI yet.
+Deferred: admin workspace UI, admin-issued staff passwords/forced password change, staff account management, settings and reports/CSV. Admin service and appointment management exist in the backend API but have no UI yet.
 
 ## Source layout
 
 - `worker/` — Hono app, auth/public/staff/admin routes, middleware, error envelope, availability engine and typed D1 repositories.
+- `worker/email/` — email event contract, HTML/text templates and the console/Resend/no-op transports.
 - `worker/auth/` — password hashing, session cookies, role middleware and rate limiting.
-- `worker/repositories/` — typed D1 access for users, sessions, services, schedules, business settings, bookings, managed appointments and audit logs.
-- `worker/services/` — availability calculation, schedule validation, availability-context loading, booking/token lifecycle and staff/admin appointment management.
+- `worker/repositories/` — typed D1 access for users, sessions, services, schedules, business settings, bookings, managed appointments, notification outbox and audit logs.
+- `worker/services/` — availability calculation, schedule validation, availability-context loading, booking/token lifecycle, staff/admin appointment management and email dispatch/retry.
 - `migrations/` — ordered D1 schema migrations; never edit an applied migration.
 - `seed/local.sql` — local-only sample business settings, services, hashed demo accounts and demo working hours.
 - `scripts/` — local password-hash generation and PBKDF2 benchmark commands.

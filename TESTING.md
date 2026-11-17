@@ -36,7 +36,7 @@ Use local D1/test bindings. Never run destructive tests against production.
 
 **Phase 6 coverage (16 November 2026):** `tests/bookings.test.ts` covers guest and customer creation, server-side end-time calculation and staff assignment, trimmed/normalized guest fields, hash-only token storage with a bounded expiry, validation and conflict responses, pending requests not blocking slots, generic guest-link failures for used/expired/non-pending/unknown tokens, customer ownership and list ordering, and pending-only customer self-cancellation.
 
-**Phase 7 coverage (16 November 2026):** `tests/appointment-management.test.ts` covers staff dashboard partitioning and counts, staff-only list/detail scoping, approval of a guest request with guest-token invalidation and an audit row, refusal of past/working-hours/time-off/confirmed-overlap approvals without state changes, rejection and confirmed-only staff cancellation, staff rescheduling with `422` future/window/valid-minute failures and `409` confirmed-overlap failures while its guest token stays live, admin list filters (status/staff/date/search) and detail, the read-only active-staff list, admin approval/reschedule/cancel with audit ordering, admin pending cancellation, reassignment success plus same-staff/unknown-staff/past/outside-window/confirmed-conflict errors, customer/staff/admin role gates, and a repository-level stale-start reschedule guard. These tests assert the database state directly; email/outbox assertions remain Phase 8.
+**Phase 7 coverage (16 November 2026):** `tests/appointment-management.test.ts` covers staff dashboard partitioning and counts, staff-only list/detail scoping, approval of a guest request with guest-token invalidation and an audit row, refusal of past/working-hours/time-off/confirmed-overlap approvals without state changes, rejection and confirmed-only staff cancellation, staff rescheduling with `422` future/window/valid-minute failures and `409` confirmed-overlap failures while its guest token stays live, admin list filters (status/staff/date/search) and detail, the read-only active-staff list, admin approval/reschedule/cancel with audit ordering, admin pending cancellation, reassignment success plus same-staff/unknown-staff/past/outside-window/confirmed-conflict errors, customer/staff/admin role gates, and a repository-level stale-start reschedule guard. These tests assert the database state directly. Outbox and email assertions are covered by `tests/notifications.test.ts` in Phase 8.
 
 - Guest booking and authenticated customer booking both create `pending` appointments.
 - Server calculates end time; a client cannot override the service duration or status.
@@ -100,6 +100,8 @@ Use local D1/test bindings. Never run destructive tests against production.
 
 ## 7. Notification/outbox tests
 
+**Phase 8 coverage (17 November 2026):** `tests/notifications.test.ts` covers the guest `request_received` email with a cancellation link and payload purge after send, the customer variant without a guest link, `booking_confirmed` on staff approval with token invalidation, `booking_update` for rejection and staff reschedule, `booking_update` on admin reassignment, failure recording that leaves the appointment confirmed, inline/scheduled retry success, the attempt limit and the recent-`sending` claim guard, plus template escaping and previous-time rendering. Provider calls are stubbed, so no test sends real mail.
+
 - Successful booking creation queues `request_received` once.
 - Successful approval queues `booking_confirmed` only after the status transition commits.
 - Rejection queues `booking_update` with a declined status.
@@ -109,6 +111,9 @@ Use local D1/test bindings. Never run destructive tests against production.
 - Email provider failure is recorded and does not undo booking/approval/rejection/cancellation.
 - Development email adapter logs only safe previews and never sends real mail.
 - No appointment reminder is queued or sent.
+- A sent row drops the guest cancellation URL from `payload_json`; the raw token is absent from outbox payloads after delivery.
+- A concurrent claim cannot send one outbox row twice; rows stop after the attempt limit.
+- The scheduled job retries `pending`/`failed` rows and reclaims abandoned `sending` rows.
 
 ## 8. Reports and CSV
 

@@ -83,10 +83,15 @@ export class BookingsRepository {
   constructor(private readonly db: D1Database) {}
 
   /**
-   * Inserts the pending appointment and, for guests, its cancellation token in
-   * one D1 batch so a failed token insert cannot leave an orphan booking.
+   * Inserts the pending appointment, its optional guest token and the
+   * `request_received` outbox row in one D1 batch so a failed insert cannot
+   * leave a partial booking or a missing email intent.
    */
-  async create(booking: NewBooking, token: NewGuestToken | null): Promise<void> {
+  async create(
+    booking: NewBooking,
+    token: NewGuestToken | null,
+    notification: D1PreparedStatement | null = null,
+  ): Promise<void> {
     const statements = [
       this.db
         .prepare(
@@ -131,6 +136,10 @@ export class BookingsRepository {
             token.expiresAt,
           ),
       )
+    }
+
+    if (notification) {
+      statements.push(notification)
     }
 
     await this.db.batch(statements)

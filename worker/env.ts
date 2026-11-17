@@ -7,6 +7,12 @@ import type { AuthUser } from './types'
 export interface Env {
   DB: D1Database
   ENVIRONMENT?: string
+  /** Verified sender for transactional email, for example `Slotly <hello@example.com>`. */
+  EMAIL_FROM?: string
+  EMAIL_REPLY_TO?: string
+  /** `console`, `resend` or `none`. Defaults by environment and key presence. */
+  EMAIL_TRANSPORT?: string
+  RESEND_API_KEY?: string
 }
 
 export type AppEnv = {

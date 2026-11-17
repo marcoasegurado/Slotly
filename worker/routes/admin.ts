@@ -32,6 +32,7 @@ import {
   rejectAdminAppointment,
   rescheduleAdminAppointment,
 } from '../services/appointment-management'
+import { dispatchAppointmentEmails } from '../services/notifications'
 
 export const adminRoutes = new Hono<AppEnv>()
 
@@ -83,14 +84,14 @@ adminRoutes.patch('/appointments/:id', async (c) => {
     1,
     MAX_UNIX_SECONDS,
   )
-  return c.json({
-    data: await rescheduleAdminAppointment(
-      c.env.DB,
-      c.get('user').id,
-      id,
-      startAt,
-    ),
-  })
+  const appointment = await rescheduleAdminAppointment(
+    c.env.DB,
+    c.get('user').id,
+    id,
+    startAt,
+  )
+  await dispatchAppointmentEmails(c.env, appointment.publicReference)
+  return c.json({ data: appointment })
 })
 
 adminRoutes.post('/appointments/:id/approve', async (c) => {
@@ -103,9 +104,13 @@ adminRoutes.post('/appointments/:id/approve', async (c) => {
     )
   }
 
-  return c.json({
-    data: await approveAdminAppointment(c.env.DB, c.get('user').id, id),
-  })
+  const appointment = await approveAdminAppointment(
+    c.env.DB,
+    c.get('user').id,
+    id,
+  )
+  await dispatchAppointmentEmails(c.env, appointment.publicReference)
+  return c.json({ data: appointment })
 })
 
 adminRoutes.post('/appointments/:id/reject', async (c) => {
@@ -119,14 +124,14 @@ adminRoutes.post('/appointments/:id/reject', async (c) => {
   }
 
   const body = await readOptionalJsonObject(c)
-  return c.json({
-    data: await rejectAdminAppointment(
-      c.env.DB,
-      c.get('user').id,
-      id,
-      parseReason(body),
-    ),
-  })
+  const appointment = await rejectAdminAppointment(
+    c.env.DB,
+    c.get('user').id,
+    id,
+    parseReason(body),
+  )
+  await dispatchAppointmentEmails(c.env, appointment.publicReference)
+  return c.json({ data: appointment })
 })
 
 adminRoutes.post('/appointments/:id/cancel', async (c) => {
@@ -140,14 +145,14 @@ adminRoutes.post('/appointments/:id/cancel', async (c) => {
   }
 
   const body = await readOptionalJsonObject(c)
-  return c.json({
-    data: await cancelAdminAppointment(
-      c.env.DB,
-      c.get('user').id,
-      id,
-      parseReason(body),
-    ),
-  })
+  const appointment = await cancelAdminAppointment(
+    c.env.DB,
+    c.get('user').id,
+    id,
+    parseReason(body),
+  )
+  await dispatchAppointmentEmails(c.env, appointment.publicReference)
+  return c.json({ data: appointment })
 })
 
 adminRoutes.post('/appointments/:id/reassign', async (c) => {
@@ -170,14 +175,14 @@ adminRoutes.post('/appointments/:id/reassign', async (c) => {
     MAX_UNIX_SECONDS,
   )
 
-  return c.json({
-    data: await reassignAdminAppointment(
-      c.env.DB,
-      c.get('user').id,
-      id,
-      { staffId, startAt },
-    ),
-  })
+  const appointment = await reassignAdminAppointment(
+    c.env.DB,
+    c.get('user').id,
+    id,
+    { staffId, startAt },
+  )
+  await dispatchAppointmentEmails(c.env, appointment.publicReference)
+  return c.json({ data: appointment })
 })
 
 adminRoutes.get('/staff', async (c) => {

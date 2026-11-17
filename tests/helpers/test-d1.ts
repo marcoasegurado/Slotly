@@ -1,14 +1,18 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import type { D1Database, D1Result } from '@cloudflare/workers-types'
 
 const repoRoot = process.cwd()
 
-export const migrationSql = readFileSync(
-  resolve(repoRoot, 'migrations', '0001_initial_schema.sql'),
-  'utf8',
-)
+const migrationDir = resolve(repoRoot, 'migrations')
+
+/** Every ordered migration, so tests exercise the same schema as local D1. */
+export const migrationSql = readdirSync(migrationDir)
+  .filter((file) => file.endsWith('.sql'))
+  .sort()
+  .map((file) => readFileSync(resolve(migrationDir, file), 'utf8'))
+  .join('\n')
 
 export const seedSql = readFileSync(
   resolve(repoRoot, 'seed', 'local.sql'),

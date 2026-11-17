@@ -15,6 +15,7 @@ import { ServicesRepository } from '../repositories/services'
 import type { Booking, CreateBookingResult, CustomerBookings } from '../types'
 import { getDayAvailability } from './availability'
 import { loadAvailabilityContext } from './availability-context'
+import { buildNotificationStatement } from './notifications'
 
 /** Private guest links stop working after three days or at the appointment. */
 export const GUEST_TOKEN_TTL_SECONDS = 72 * 60 * 60
@@ -24,9 +25,19 @@ export interface CreateBookingInput {
   /** Unix seconds. */
   startAt: number
   customerUserId: string | null
+  customerEmail: string | null
   guestName: string | null
   guestEmail: string | null
   customerNote: string | null
+  /** Origin used to build the guest cancellation link in the email. */
+  requestOrigin: string
+}
+
+export interface CreateBookingOutcome {
+  /** Public booking payload returned to the client. */
+  result: CreateBookingResult
+  /** Internal outbox row for the inline send attempt; never returned to clients. */
+  notificationId: string | null
 }
 
 function cancellationUnavailable(): ApiError {
@@ -50,7 +61,7 @@ export async function createBooking(
   db: D1Database,
   input: CreateBookingInput,
   now: Date = new Date(),
-): Promise<CreateBookingResult> {
+): Promise<CreateBookingOutcome> {
   const business = await new BusinessSettingsRepository(db).getPublic()
   if (!business) {
     throw new ApiError(
@@ -153,6 +164,31 @@ export async function createBooking(
     updatedAt: createdAt,
   }
 
+  const recipientEmail = isGuest ? input.guestEmail : input.customerEmail
+  const cancellationUrl = cancellationToken
+    ? `${input.requestOrigin.replace(/\/+$/, '')}/cancel/${encodeURIComponent(
+        cancellationToken,
+      )}`
+    : null
+
+  let notificationId: string | null = null
+  let notification: D1PreparedStatement | null = null
+  if (recipientEmail) {
+    notificationId = randomId('ntf')
+    notification = buildNotificationStatement(
+      db,
+      {
+        appointmentId: id,
+        customerEmail: input.customerEmail,
+        guestEmail: input.guestEmail,
+      },
+      'request_received',
+      cancellationUrl ? { cancellationUrl } : {},
+      createdAt,
+      notificationId,
+    )
+  }
+
   await new BookingsRepository(db).create(
     {
       id,
@@ -170,9 +206,13 @@ export async function createBooking(
       now: createdAt,
     },
     token,
+    notification,
   )
 
-  return { appointment: booking, cancellationToken }
+  return {
+    result: { appointment: booking, cancellationToken },
+    notificationId,
+  }
 }
 
 export async function listCustomerBookings(

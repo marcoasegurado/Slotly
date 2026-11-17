@@ -107,8 +107,9 @@ The guest link opens a read-only page through a route such as `/cancel/:token`. 
 - A missing or inactive service returns `404 SERVICE_NOT_FOUND`; missing business settings return `404 BUSINESS_NOT_CONFIGURED`.
 - A start in the past or outside the booking window returns `422 VALIDATION_ERROR`. A closed day, a full day or a time that is not one of the current slots returns `409 BOOKING_CONFLICT`.
 - Requests are limited to 20 per client IP per hour. `429 RATE_LIMITED` includes `Retry-After` and `details.retryAfterSeconds`; the limiter is per Worker isolate and best-effort.
+- A `request_received` email intent is written to `notification_outbox` in the same batch as the appointment. Guest emails include the private `/cancel/:token` link; customer emails go to the signed-in account address and contain no guest link.
 
-`POST /api/public/guest-cancellation` accepts `{ "token": "..." }` and returns `200` with `{ "data": { "publicReference": "SLO-..." } }` after cancelling the linked pending guest booking. Unchanged, used, expired, confirmed, rejected, cancelled, customer-owned or unknown tokens all return the same `404 CANCELLATION_LINK_UNAVAILABLE`. Cancellation marks the token used and records `Cancelled by guest`. Requests are limited to 30 per client IP per 15 minutes.
+`POST /api/public/guest-cancellation` accepts `{ "token": "..." }` and returns `200` with `{ "data": { "publicReference": "SLO-..." } }` after cancelling the linked pending guest booking. Unchanged, used, expired, confirmed, rejected, cancelled, customer-owned or unknown tokens all return the same `404 CANCELLATION_LINK_UNAVAILABLE`. Cancellation marks the token used and records `Cancelled by guest`. Requests are limited to 30 per client IP per 15 minutes. Guest self-cancellation sends no email and never exposes the token in the response.
 
 ## 3. Authentication and customer routes
 
@@ -251,7 +252,7 @@ Guest appointments set `customer` to `null` and populate `guestName`/`guestEmail
 - `POST /api/staff/appointments/:id/reject` accepts an optional `{ "reason" }` (trimmed, maximum 300 characters) and rejects only an assigned pending request. The default resolution note is `Declined by the team`. A non-pending appointment returns `409 BOOKING_CONFLICT`.
 - `POST /api/staff/appointments/:id/cancel` accepts an optional `{ "reason" }` and cancels only an assigned `confirmed` appointment. The default resolution note is `Cancelled by the team`. Pending requests must be rejected instead and return `409 BOOKING_CONFLICT`.
 - `PATCH /api/staff/appointments/:id` accepts `{ "startAt" }` (Unix seconds) and reschedules a pending or confirmed appointment within the staff member's own schedule. The assigned staff member cannot be changed. Past or outside-booking-window times return `422 VALIDATION_ERROR`; working-hours, time-off or confirmed-overlap failures return `409 BOOKING_CONFLICT`.
-- Every successful approve, reject, cancel and reschedule writes an `audit_logs` row. A reschedule keeps a pending appointment's guest cancellation link usable; only leaving `pending` invalidates it. Phase 7 intentionally does not insert `notification_outbox` rows; email intents start in Phase 8.
+- Every successful approve, reject, cancel and reschedule writes an `audit_logs` row. A reschedule keeps a pending appointment's guest cancellation link usable; only leaving `pending` invalidates it. Approve writes a `booking_confirmed` outbox row; reject, cancel and reschedule write `booking_update` rows in the same batch. The response is returned even if the inline email attempt fails.
 
 
 ## 5. Admin routes
@@ -289,7 +290,7 @@ Guest appointments set `customer` to `null` and populate `guestName`/`guestEmail
 - `POST /api/admin/appointments/:id/cancel` accepts an optional `{ "reason" }` and can cancel either a pending or a confirmed appointment. The default resolution note is `Cancelled by the team`.
 - `POST /api/admin/appointments/:id/reassign` accepts `{ "staffId", "startAt"? }`. The target must be an active staff member, so unknown or inactive staff return `404 STAFF_NOT_FOUND`; reassigning to the current staff member returns `422 VALIDATION_ERROR`. When `startAt` is omitted the current time is kept. The effective time must be in the future and inside the booking window (`422 VALIDATION_ERROR` otherwise), and the target's working hours, time off and confirmed appointments are revalidated (`409 BOOKING_CONFLICT`). The appointment keeps its pending/confirmed status.
 - `GET /api/admin/staff` returns only active staff `{ "id", "name", "email" }` entries for the reassignment control. Full staff account management remains a later phase.
-- Approve, reject, cancel, reschedule and reassign actions write an `audit_logs` row with the public appointment reference, actor, previous/new status and relevant staff/time changes. Guest cancellation tokens are invalidated when an appointment leaves `pending`.
+- Approve, reject, cancel, reschedule and reassign actions write an `audit_logs` row with the public appointment reference, actor, previous/new status and relevant staff/time changes. Guest cancellation tokens are invalidated when an appointment leaves `pending`. Reject, cancel, admin reschedule and admin reassignment also enqueue a `booking_update` email in the same batch.
 - These routes are admin-only; staff and customer sessions receive `403 FORBIDDEN`.
 
 
@@ -307,9 +308,18 @@ Exactly three customer-facing transactional email types exist:
 
 1. `request_received` — after successful booking creation; includes pending status and guest cancellation link where relevant.
 2. `booking_confirmed` — only after approval has committed successfully.
-3. `booking_update` — rejection, staff/admin cancellation, or material Admin appointment change (such as a time change).
+3. `booking_update` — rejection, staff/admin cancellation, staff/admin reschedule or admin reassignment (any material change to time or staff).
 
 There are no reminder endpoints, scheduled reminders or reminder email templates. Email-send failure is recorded in the outbox and must not revert a valid appointment state change.
+
+### 7.1 Implemented email delivery
+
+- Emails go to the customer account address, or the guest email for guest bookings. Customer and guest self-cancellations send no email.
+- The outbox insert is batched with the booking insert or the transition's audit row. The API commits the booking/state change first and then makes a best-effort inline send; a failed send only updates the outbox row.
+- `notification_outbox.delivery_status` moves through `pending` → `sending` → `sent` or `failed`. Each claim records `last_attempt_at`. The scheduled handler runs every 15 minutes, retries at most 5 times, and treats a `sending` row whose current attempt started more than 15 minutes ago as abandoned by a crashed invocation. Successful sends store `sent_at` and clear `last_error`.
+- A successful send replaces the payload with the non-secret extras (action, previous times, resolution note), removing the guest cancellation URL so the raw token does not stay at rest.
+- Transport: `EMAIL_TRANSPORT` accepts `console`, `resend` or `none`; without it, a configured `RESEND_API_KEY` selects Resend, production/development falls back to the console transport, and `ENVIRONMENT=test` uses a silent no-op. `EMAIL_FROM` supplies the verified sender and `EMAIL_REPLY_TO` is a fallback reply address.
+- The Resend API key is a secret: use `.dev.vars` locally or `wrangler secret put RESEND_API_KEY` at deployment. Never commit it. Resend also needs a verified sending domain before production delivery works.
 
 ## 8. CSV export rules
 

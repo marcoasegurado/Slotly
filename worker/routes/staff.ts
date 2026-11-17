@@ -27,6 +27,7 @@ import {
 } from '../services/appointment-management'
 import { findScheduleConflicts } from '../services/availability'
 import { requireBusinessSettings } from '../services/business'
+import { dispatchAppointmentEmails } from '../services/notifications'
 import { parseWorkingHours } from '../services/schedule'
 import type { StaffSchedule } from '../types'
 
@@ -97,9 +98,13 @@ staffRoutes.post('/appointments/:id/approve', async (c) => {
     )
   }
 
-  return c.json({
-    data: await approveStaffAppointment(c.env.DB, c.get('user').id, id),
-  })
+  const appointment = await approveStaffAppointment(
+    c.env.DB,
+    c.get('user').id,
+    id,
+  )
+  await dispatchAppointmentEmails(c.env, appointment.publicReference)
+  return c.json({ data: appointment })
 })
 
 staffRoutes.post('/appointments/:id/reject', async (c) => {
@@ -113,14 +118,14 @@ staffRoutes.post('/appointments/:id/reject', async (c) => {
   }
 
   const body = await readOptionalJsonObject(c)
-  return c.json({
-    data: await rejectStaffAppointment(
-      c.env.DB,
-      c.get('user').id,
-      id,
-      parseReason(body),
-    ),
-  })
+  const appointment = await rejectStaffAppointment(
+    c.env.DB,
+    c.get('user').id,
+    id,
+    parseReason(body),
+  )
+  await dispatchAppointmentEmails(c.env, appointment.publicReference)
+  return c.json({ data: appointment })
 })
 
 staffRoutes.post('/appointments/:id/cancel', async (c) => {
@@ -134,14 +139,14 @@ staffRoutes.post('/appointments/:id/cancel', async (c) => {
   }
 
   const body = await readOptionalJsonObject(c)
-  return c.json({
-    data: await cancelStaffAppointment(
-      c.env.DB,
-      c.get('user').id,
-      id,
-      parseReason(body),
-    ),
-  })
+  const appointment = await cancelStaffAppointment(
+    c.env.DB,
+    c.get('user').id,
+    id,
+    parseReason(body),
+  )
+  await dispatchAppointmentEmails(c.env, appointment.publicReference)
+  return c.json({ data: appointment })
 })
 
 staffRoutes.patch('/appointments/:id', async (c) => {
@@ -162,14 +167,14 @@ staffRoutes.patch('/appointments/:id', async (c) => {
     1,
     MAX_UNIX_SECONDS,
   )
-  return c.json({
-    data: await rescheduleStaffAppointment(
-      c.env.DB,
-      c.get('user').id,
-      id,
-      startAt,
-    ),
-  })
+  const appointment = await rescheduleStaffAppointment(
+    c.env.DB,
+    c.get('user').id,
+    id,
+    startAt,
+  )
+  await dispatchAppointmentEmails(c.env, appointment.publicReference)
+  return c.json({ data: appointment })
 })
 
 staffRoutes.get('/availability', async (c) => {

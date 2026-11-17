@@ -191,7 +191,9 @@ describe('GET /api/public/availability', () => {
   })
 
   it('omits confirmed bookings from availability and ignores pending requests', async () => {
-    const dateKey = nextDateKey([1, 2, 3, 4, 5])
+    // Tuesday/Thursday: only Ana works at 09:00, so her confirmed booking must
+    // hide that start. Ben starts at 10:00 and Ciel does not work those days.
+    const dateKey = nextDateKey([2, 4])
     const appointmentStart = at(dateKey, 540)
     const appointmentEnd = at(dateKey, 600)
 
