@@ -161,3 +161,65 @@ export interface StaffDashboard {
     confirmedUpcoming: number
   }
 }
+
+/** Appointment counts for each status in the schema. */
+export interface StatusCounts {
+  pending: number
+  confirmed: number
+  rejected: number
+  cancelled: number
+}
+
+export interface AdminDashboard {
+  /** Unix seconds. */
+  asOf: number
+  /** Business-local date key for `today`. */
+  dateKey: string
+  timezone: string
+  /** All appointments, regardless of date. */
+  totals: StatusCounts
+  /** Appointments starting inside the current business-local day. */
+  today: StatusCounts
+  /** Pending/confirmed appointments ending after `asOf`. */
+  upcoming: {
+    pending: number
+    confirmed: number
+  }
+  staff: Array<{
+    id: string
+    name: string
+    pending: number
+    confirmedUpcoming: number
+  }>
+}
+
+export interface ReportTotals extends StatusCounts {
+  appointments: number
+}
+
+export interface ReportSummary {
+  range: {
+    /** Business-local date keys, inclusive; null when unbounded. */
+    from: string | null
+    to: string | null
+    timezone: string
+  }
+  filters: {
+    serviceId: string | null
+    staffId: string | null
+    status: AppointmentStatus | null
+  }
+  totals: ReportTotals
+  byService: Array<{
+    serviceId: string
+    serviceName: string
+    total: number
+    counts: StatusCounts
+  }>
+  byStaff: Array<{
+    staffId: string
+    name: string
+    total: number
+    counts: StatusCounts
+  }>
+}

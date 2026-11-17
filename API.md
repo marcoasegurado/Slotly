@@ -19,7 +19,7 @@
 ```
 
 - Operational check: `GET /api/health` returns `{ "data": { "status": "ok", "service": "slotly-api", "environment": "...", "timestamp": 0 } }`, where `timestamp` is Unix seconds. It returns `503 DATABASE_UNAVAILABLE` when D1 cannot be queried.
-- Implemented: `/api/health`, `/api/public/business`, `/api/public/services`, `/api/public/availability`, `/api/public/bookings`, `/api/public/guest-cancellation`, the `/api/auth/*` and `/api/customer/bookings*` routes in section 3, the staff schedule/time-off routes in section 4 and the admin service routes in section 5. The remaining routes below are contracts for later phases.
+- Implemented: `/api/health`, `/api/public/business`, `/api/public/services`, `/api/public/availability`, `/api/public/bookings`, `/api/public/guest-cancellation`, the `/api/auth/*` and `/api/customer/bookings*` routes in section 3, the staff schedule/time-off and appointment-management routes in section 4, and the admin service, appointment-management, dashboard and reports routes in section 5. The remaining routes below are contracts for later phases.
 - API instants (`startAt`, `endAt`) are integer Unix seconds. Business-local dates are `YYYY-MM-DD` in the configured IANA timezone.
 - Authenticated requests use the opaque `slotly_session` cookie. The cookie is `HttpOnly`, `SameSite=Lax`, `Path=/`, has a 7-day TTL and is `Secure` on HTTPS or in production. D1 stores only the SHA-256 hash of the token.
 - Mutating requests (`POST`, `PUT`, `PATCH`, `DELETE`) must send an `Origin` header that exactly matches the request origin; otherwise the API returns `403 CSRF_REJECTED`. Safe reads do not require an `Origin` header.
@@ -293,6 +293,72 @@ Guest appointments set `customer` to `null` and populate `guestName`/`guestEmail
 - Approve, reject, cancel, reschedule and reassign actions write an `audit_logs` row with the public appointment reference, actor, previous/new status and relevant staff/time changes. Guest cancellation tokens are invalidated when an appointment leaves `pending`. Reject, cancel, admin reschedule and admin reassignment also enqueue a `booking_update` email in the same batch.
 - These routes are admin-only; staff and customer sessions receive `403 FORBIDDEN`.
 
+### 5.3 Implemented dashboard and reports
+
+`GET /api/admin/dashboard` returns a business-wide snapshot:
+
+```json
+{
+  "data": {
+    "asOf": 1794878148,
+    "dateKey": "2026-11-17",
+    "timezone": "Asia/Manila",
+    "totals": { "pending": 4, "confirmed": 12, "rejected": 3, "cancelled": 2 },
+    "today": { "pending": 2, "confirmed": 4, "rejected": 0, "cancelled": 1 },
+    "upcoming": { "pending": 4, "confirmed": 10 },
+    "staff": [
+      {
+        "id": "usr_ana",
+        "name": "Ana Reyes",
+        "pending": 2,
+        "confirmedUpcoming": 5
+      }
+    ]
+  }
+}
+```
+
+- `today` covers appointments starting inside the current business-local date. `upcoming` requires `endAt > asOf` and a `pending` or `confirmed` status. `staff` lists active staff members only and counts every pending appointment plus confirmed appointments ending after `asOf`.
+
+`GET /api/admin/reports/summary?from=YYYY-MM-DD&to=YYYY-MM-DD&serviceId=&staffId=&status=` returns aggregated counts:
+
+```json
+{
+  "data": {
+    "range": { "from": "2026-11-01", "to": "2026-11-30", "timezone": "Asia/Manila" },
+    "filters": { "serviceId": null, "staffId": null, "status": null },
+    "totals": { "appointments": 24, "pending": 3, "confirmed": 17, "rejected": 1, "cancelled": 3 },
+    "byService": [
+      {
+        "serviceId": "svc_consult",
+        "serviceName": "Initial consultation",
+        "total": 15,
+        "counts": { "pending": 2, "confirmed": 11, "rejected": 0, "cancelled": 2 }
+      }
+    ],
+    "byStaff": [
+      {
+        "staffId": "usr_ana",
+        "name": "Ana Reyes",
+        "total": 9,
+        "counts": { "pending": 1, "confirmed": 7, "rejected": 0, "cancelled": 1 }
+      }
+    ]
+  }
+}
+```
+
+- `from`/`to` are inclusive business-local date keys. Omit either bound for an open range. A reversed range, invalid date, unknown status or malformed ID returns `422 VALIDATION_ERROR`.
+- `serviceId`, `staffId` and `status` narrow the set, and the same filters apply to the CSV export. `totals` is the status breakdown plus `appointments`; `byService` and `byStaff` group by the appointment snapshot service and assigned staff. Counts come from SQL aggregates rather than loaded rows.
+
+`GET /api/admin/reports/export.csv`
+
+- Returns the filtered appointments as `text/csv; charset=utf-8` with `Content-Disposition: attachment; filename="slotly-appointments-YYYY-MM-DD.csv"` and `Cache-Control: no-store`. The header is `Reference,Date,Start,End,Duration minutes,Service,Staff,Status,Booking type,Customer name,Customer email,Created`.
+- Date, start, end and created values use the business timezone. Customer-owned bookings use the account name and email; guest bookings use the guest fields and `Booking type` is `guest`.
+- Cells are RFC 4180 quoted. Values beginning with `=`, `+`, `-`, `@`, tab or carriage return are prefixed with an apostrophe to neutralize spreadsheet formulas.
+- At most 5000 rows are exported. `X-Report-Rows` reports the row count and `X-Report-Truncated: true` warns when more rows matched; the summary still counts every matching appointment.
+- These routes are admin-only; staff and customer sessions receive `403 FORBIDDEN`.
+
 
 ## 6. Schedule and service change conflicts
 
@@ -328,3 +394,5 @@ There are no reminder endpoints, scheduled reminders or reminder email templates
 - Use aggregate queries where possible; do not fetch every row only to calculate summary counts.
 - Quote/escape CSV fields correctly and neutralize spreadsheet formula injection (for example values beginning with `=`, `+`, `-`, `@`, tab or carriage-return where relevant).
 - Use a clear filename and `text/csv` response content type.
+
+**Phase 9 implementation note (17 November 2026):** `GET /api/admin/reports/export.csv` implements these rules through `worker/lib/csv.ts` and `worker/services/reports.ts`. Summary counts use grouped SQL aggregates, while the export materializes at most 5000 appointment rows, flags truncation in `X-Report-Truncated`, and reuses the exact filters from the summary endpoint.

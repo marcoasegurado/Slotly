@@ -116,6 +116,8 @@ Add indexes for:
 - Sessions by `session_token_hash` (unique) and `expires_at`.
 - Outbox by `(delivery_status, created_at)`.
 
+**Phase 9 implementation note (17 November 2026):** No new tables or indexes were needed. `ReportsRepository` uses the existing `idx_appointments_status_start`, `idx_appointments_service_start` and `idx_appointments_staff_start` indexes for date-range, status, service and staff filters. Summary rows are produced with `COUNT(CASE …)`/`GROUP BY` so the database does the aggregation; only the CSV export materializes appointment rows, capped at 5000 per request with a truncation flag.
+
 Add CHECK constraints for status enums, valid durations and interval ordering. Validate non-overlapping working hours in the service layer; document any database-level constraints that SQLite cannot conveniently express.
 
 ## 4. Approval concurrency and D1 transaction rules

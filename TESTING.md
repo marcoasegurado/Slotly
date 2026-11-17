@@ -117,12 +117,15 @@ Use local D1/test bindings. Never run destructive tests against production.
 
 ## 8. Reports and CSV
 
+**Phase 9 coverage (17 November 2026):** `tests/reports.test.ts` covers the admin dashboard totals, today and upcoming counts plus per-staff workload; summary counts for an inclusive date range with per-service and per-staff status breakdowns; combined status/service/staff/date filters; empty ranges returning zero totals and empty groups; invalid dates, reversed ranges and unknown statuses returning `422 VALIDATION_ERROR`; admin-only access on the dashboard, summary and export routes; and CSV headers, business-local date/time rendering, row/truncation headers, formula neutralization, RFC 4180 quoting and filter parity with the summary. `tests/csv.test.ts` unit-tests the escaping helper.
+
 - Filters by date range, service, staff and status combine correctly.
 - Counts by service/staff and status breakdown match known fixture data.
 - Empty report data produces an empty state, not fake values.
 - CSV export is Admin-only and respects exactly the active filters.
 - CSV quotes commas, quotes and line breaks correctly.
 - CSV formula-injection prefixes are neutralized.
+- Exports over 5000 rows report `X-Report-Truncated: true` without changing the summary totals.
 
 ## 9. UI/accessibility/responsive tests
 

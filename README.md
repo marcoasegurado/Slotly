@@ -1,6 +1,6 @@
 # Slotly
 
-Appointment booking for one small business. The React/Vite UI runs against an in-memory mock repository for booking, customer and staff flows. Phase 3 adds the Cloudflare Worker, Hono API and D1 schema foundation, Phase 4 adds password hashing, D1-backed sessions, role middleware and auth routes, Phase 5 adds service management, staff schedules and the availability engine, Phase 6 adds guest/customer booking creation and cancellation, Phase 7 adds staff approval/rejection/rescheduling plus admin reassignment, and Phase 8 adds transactional email through a D1 outbox with inline sends and scheduled retries. The public business/services reads are wired to the Worker; the other client flows remain mock-backed until their API phases.
+Appointment booking for one small business. The React/Vite UI runs against an in-memory mock repository for booking, customer and staff flows. Phase 3 adds the Cloudflare Worker, Hono API and D1 schema foundation, Phase 4 adds password hashing, D1-backed sessions, role middleware and auth routes, Phase 5 adds service management, staff schedules and the availability engine, Phase 6 adds guest/customer booking creation and cancellation, Phase 7 adds staff approval/rejection/rescheduling plus admin reassignment, Phase 8 adds transactional email through a D1 outbox with inline sends and scheduled retries, and Phase 9 adds the admin dashboard, aggregate report summary and CSV export. The public business/services reads are wired to the Worker; the other client flows remain mock-backed until their API phases.
 
 ## Run locally
 
@@ -120,6 +120,14 @@ Transactional email (Phase 8, backend):
 - Transport selection: `EMAIL_TRANSPORT` (`console`, `resend`, `none`), otherwise Resend when `RESEND_API_KEY` is set, otherwise the console transport, with a silent no-op in tests. `EMAIL_FROM` defaults to a safe placeholder, and replies fall back to the business email.
 - Resend is the production provider. Put `RESEND_API_KEY` in `.dev.vars` locally or set it with `wrangler secret put` at deployment; the key and any real sender domain are not committed. The `*/15` cron trigger in `wrangler.toml` is local configuration until Phase 10.
 
+Admin dashboard and reports (Phase 9, backend):
+
+- `GET /api/admin/dashboard` returns business-wide status totals, today's totals in the business timezone, pending/confirmed upcoming counts and the pending plus confirmed-upcoming workload for each active staff member.
+- `GET /api/admin/reports/summary` accepts inclusive `from`/`to` business-local date keys plus `serviceId`, `staffId` and `status` filters. It returns totals and per-service/per-staff status breakdowns from grouped SQL aggregates rather than loading every appointment.
+- `GET /api/admin/reports/export.csv` applies exactly the same filters and returns `text/csv` with an attachment filename, `X-Report-Rows` and `X-Report-Truncated`.
+- CSV cells are RFC 4180 quoted and formula-like values are prefixed with an apostrophe. A single export is capped at 5000 rows and flags truncation; summary counts still cover every matching appointment.
+- All three routes are admin-only. Invalid dates, reversed ranges, unknown statuses or malformed IDs return `422 VALIDATION_ERROR`. No new tables or indexes were required.
+
 Mock UI (still in memory):
 
 - Public service/date/time selection, guest booking and customer booking.
@@ -133,15 +141,16 @@ Mock UI (still in memory):
 - Pending requests never block customer availability; approval rechecks hours, time off and confirmed overlaps.
 - Staff cannot reassign appointments or view another staff member's assignments.
 
-Deferred: admin workspace UI, admin-issued staff passwords/forced password change, staff account management, settings and reports/CSV. Admin service and appointment management exist in the backend API but have no UI yet.
+Deferred: admin workspace UI, admin-issued staff passwords/forced password change, staff account management and settings. Admin service, appointment management, dashboard and report/CSV endpoints exist in the backend API but have no UI yet.
 
 ## Source layout
 
 - `worker/` — Hono app, auth/public/staff/admin routes, middleware, error envelope, availability engine and typed D1 repositories.
 - `worker/email/` — email event contract, HTML/text templates and the console/Resend/no-op transports.
 - `worker/auth/` — password hashing, session cookies, role middleware and rate limiting.
-- `worker/repositories/` — typed D1 access for users, sessions, services, schedules, business settings, bookings, managed appointments, notification outbox and audit logs.
-- `worker/services/` — availability calculation, schedule validation, availability-context loading, booking/token lifecycle, staff/admin appointment management and email dispatch/retry.
+- `worker/repositories/` — typed D1 access for users, sessions, services, schedules, business settings, bookings, managed appointments, notification outbox, audit logs and report aggregates.
+- `worker/services/` — availability calculation, schedule validation, availability-context loading, booking/token lifecycle, staff/admin appointment management, email dispatch/retry and dashboard/report generation.
+- `worker/lib/` — timezone/date helpers, reference and token encoding, password hashing and RFC 4180 CSV escaping.
 - `migrations/` — ordered D1 schema migrations; never edit an applied migration.
 - `seed/local.sql` — local-only sample business settings, services, hashed demo accounts and demo working hours.
 - `scripts/` — local password-hash generation and PBKDF2 benchmark commands.

@@ -9,6 +9,7 @@ import {
   parseReason,
   parseSearchQuery,
 } from '../http/appointment-query'
+import { parseReportFilters } from '../http/report-query'
 import {
   optionalBoolean,
   optionalInteger,
@@ -33,12 +34,39 @@ import {
   rescheduleAdminAppointment,
 } from '../services/appointment-management'
 import { dispatchAppointmentEmails } from '../services/notifications'
+import {
+  buildAppointmentCsv,
+  getAdminDashboard,
+  getReportSummary,
+} from '../services/reports'
 
 export const adminRoutes = new Hono<AppEnv>()
 
 adminRoutes.use('*', requireAuth, requireRole('admin'))
 
 const MAX_UNIX_SECONDS = 4_102_444_800 // 2100-01-01
+
+adminRoutes.get('/dashboard', async (c) => {
+  return c.json({ data: await getAdminDashboard(c.env.DB) })
+})
+
+adminRoutes.get('/reports/summary', async (c) => {
+  const filters = parseReportFilters((name) => c.req.query(name))
+  return c.json({ data: await getReportSummary(c.env.DB, filters) })
+})
+
+adminRoutes.get('/reports/export.csv', async (c) => {
+  const filters = parseReportFilters((name) => c.req.query(name))
+  const csv = await buildAppointmentCsv(c.env.DB, filters)
+
+  return c.body(csv.content, 200, {
+    'Content-Type': 'text/csv; charset=utf-8',
+    'Content-Disposition': `attachment; filename="${csv.filename}"`,
+    'Cache-Control': 'no-store',
+    'X-Report-Rows': String(csv.rowCount),
+    'X-Report-Truncated': csv.truncated ? 'true' : 'false',
+  })
+})
 
 adminRoutes.get('/appointments', async (c) => {
   return c.json({
