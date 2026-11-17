@@ -6,6 +6,12 @@ import type { AuthUser } from './types'
  */
 export interface Env {
   DB: D1Database
+  /**
+   * Static asset binding provided by Workers when `[assets]` is configured.
+   * Optional so unit tests can construct a minimal environment; the Worker
+   * always receives it in local development and production.
+   */
+  ASSETS?: Fetcher
   ENVIRONMENT?: string
   /** Verified sender for transactional email, for example `Slotly <hello@example.com>`. */
   EMAIL_FROM?: string

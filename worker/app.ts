@@ -2,7 +2,9 @@ import { Hono } from 'hono'
 import type { AppEnv } from './env'
 import { ApiError, apiError } from './http/errors'
 import { sameOriginGuard } from './http/csrf'
+import { redactPath } from './lib/redact'
 import { adminRoutes } from './routes/admin'
+import { appShellRoutes } from './routes/app-shell'
 import { authRoutes } from './routes/auth'
 import { customerRoutes } from './routes/customer'
 import { healthRoutes } from './routes/health'
@@ -26,6 +28,7 @@ export function createApp() {
   app.route('/api/customer', customerRoutes)
   app.route('/api/staff', staffRoutes)
   app.route('/api/admin', adminRoutes)
+  app.route('/', appShellRoutes)
 
   app.notFound((c) =>
     apiError(c, 404, 'NOT_FOUND', 'The requested resource was not found.'),
@@ -40,7 +43,7 @@ export function createApp() {
     // bound values, and must not reach client responses or noisy logs.
     console.error('Unhandled API error', {
       method: c.req.method,
-      path: c.req.path,
+      path: redactPath(c.req.path),
       name: error instanceof Error ? error.name : 'UnknownError',
     })
     return apiError(c, 500, 'INTERNAL_ERROR', 'An unexpected error occurred.')

@@ -139,3 +139,14 @@ Use local D1/test bindings. Never run destructive tests against production.
 - Body text and metadata meet the `docs/UI_DESIGN.md` minimum 11px reference. Never hide essential info in color alone.
 - Verify mobile layouts for customer, staff and admin; tables adapt to card/list or a usable horizontal-scroll treatment without clipped primary actions.
 - Verify contrast for normal text, error text, focus, disabled and status variants.
+
+## 10. Deployment and response-header checks
+
+**Phase 10 coverage (17 November 2026):** `tests/app-shell.test.ts` covers the Worker-proxied guest cancellation page: HTML is served from the assets binding with `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, `X-Robots-Tag: noindex, nofollow` and `X-Content-Type-Options: nosniff`; non-GET requests are not served the shell; and `redactPath` removes `/cancel/<token>` from logged paths.
+
+- `npm run typecheck`, `npm test` and `npm run build` pass before any deployment attempt.
+- The local build output includes `dist/_headers`.
+- `/cancel/<token>` responses carry the strict headers above, and the token never appears in logs.
+- `.dev.vars`, real D1 IDs, secrets and bootstrap SQL files are not committed.
+- The production smoke checklist in `DEPLOYMENT.md` is completed after the owner approves each remote step.
+- Accessibility and responsive checks run against real client flows only after those flows are wired to the API.

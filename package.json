@@ -14,6 +14,7 @@
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "db:seed:local": "wrangler d1 execute DB --local --file=./seed/local.sql",
     "auth:hash:demo": "vite-node scripts/generate-demo-passwords.ts",
+    "auth:hash:admin": "vite-node scripts/hash-admin.ts",
     "auth:bench": "vite-node scripts/benchmark-password.ts"
   },
   "dependencies": {

@@ -1,6 +1,6 @@
 # Slotly
 
-Appointment booking for one small business. The React/Vite UI runs against an in-memory mock repository for booking, customer and staff flows. Phase 3 adds the Cloudflare Worker, Hono API and D1 schema foundation, Phase 4 adds password hashing, D1-backed sessions, role middleware and auth routes, Phase 5 adds service management, staff schedules and the availability engine, Phase 6 adds guest/customer booking creation and cancellation, Phase 7 adds staff approval/rejection/rescheduling plus admin reassignment, Phase 8 adds transactional email through a D1 outbox with inline sends and scheduled retries, and Phase 9 adds the admin dashboard, aggregate report summary and CSV export. The public business/services reads are wired to the Worker; the other client flows remain mock-backed until their API phases.
+Appointment booking for one small business. The React/Vite UI runs against an in-memory mock repository for booking, customer and staff flows. Phase 3 adds the Cloudflare Worker, Hono API and D1 schema foundation, Phase 4 adds password hashing, D1-backed sessions, role middleware and auth routes, Phase 5 adds service management, staff schedules and the availability engine, Phase 6 adds guest/customer booking creation and cancellation, Phase 7 adds staff approval/rejection/rescheduling plus admin reassignment, Phase 8 adds transactional email through a D1 outbox with inline sends and scheduled retries, Phase 9 adds the admin dashboard, aggregate report summary and CSV export, and Phase 10 begins quality and deployment preparation with strict guest-cancellation-page headers and an approval-gated deployment runbook. The public business/services reads are wired to the Worker; the other client flows remain mock-backed until their API phases.
 
 ## Run locally
 
@@ -66,6 +66,8 @@ The project owner plans to deploy the production app on Cloudflare:
 
 Deployment is Phase 10 work and has not happened yet. No Cloudflare resources, billing or production data exist for this project. The current mock is not suitable for production deployment because it keeps data in memory and uses plaintext demo credentials.
 
+`DEPLOYMENT.md` is the Phase 10 runbook: preflight checks, the PBKDF2 plan decision, production D1 creation and migrations, business settings and first-Admin bootstrap, secrets, deploy, smoke tests, rollback and known limitations. Every remote command remains blocked until the owner approves that exact step.
+
 ## Implemented flows
 
 Backend foundation (Phase 3):
@@ -128,6 +130,14 @@ Admin dashboard and reports (Phase 9, backend):
 - CSV cells are RFC 4180 quoted and formula-like values are prefixed with an apostrophe. A single export is capped at 5000 rows and flags truncation; summary counts still cover every matching appointment.
 - All three routes are admin-only. Invalid dates, reversed ranges, unknown statuses or malformed IDs return `422 VALIDATION_ERROR`. No new tables or indexes were required.
 
+Quality and deployment preparation (Phase 10, in progress):
+
+- `/cancel/*` is Worker-first so the guest cancellation page is served with `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, `X-Robots-Tag: noindex, nofollow` and `X-Content-Type-Options: nosniff`. Guest tokens are redacted from error-log paths.
+- `public/_headers` adds conservative baseline headers (`X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`) to static pages.
+- `npm run auth:hash:admin` generates a one-time Admin INSERT with a PBKDF2 hash for production bootstrap; the plaintext password is never printed.
+- `DEPLOYMENT.md` documents the approval-gated production runbook. Deployment is still not performed, and the PBKDF2 CPU-limit decision remains unresolved.
+- Client integration and the UI accessibility/responsive checks are still deferred because the React flows remain mock-backed.
+
 Mock UI (still in memory):
 
 - Public service/date/time selection, guest booking and customer booking.
@@ -141,7 +151,7 @@ Mock UI (still in memory):
 - Pending requests never block customer availability; approval rechecks hours, time off and confirmed overlaps.
 - Staff cannot reassign appointments or view another staff member's assignments.
 
-Deferred: admin workspace UI, admin-issued staff passwords/forced password change, staff account management and settings. Admin service, appointment management, dashboard and report/CSV endpoints exist in the backend API but have no UI yet.
+Deferred: admin workspace UI, admin-issued staff passwords/forced password change, staff account management and settings. Admin service, appointment management, dashboard and report/CSV endpoints exist in the backend API but have no UI yet. Client API wiring and the Phase 10 accessibility/responsive verification are deferred while the React flows remain mock-backed.
 
 ## Source layout
 
@@ -150,10 +160,11 @@ Deferred: admin workspace UI, admin-issued staff passwords/forced password chang
 - `worker/auth/` — password hashing, session cookies, role middleware and rate limiting.
 - `worker/repositories/` — typed D1 access for users, sessions, services, schedules, business settings, bookings, managed appointments, notification outbox, audit logs and report aggregates.
 - `worker/services/` — availability calculation, schedule validation, availability-context loading, booking/token lifecycle, staff/admin appointment management, email dispatch/retry and dashboard/report generation.
-- `worker/lib/` — timezone/date helpers, reference and token encoding, password hashing and RFC 4180 CSV escaping.
+- `worker/lib/` — timezone/date helpers, reference and token encoding, password hashing, log-path redaction and RFC 4180 CSV escaping.
+- `public/` — static files copied into the Vite build, including `_headers` response rules.
 - `migrations/` — ordered D1 schema migrations; never edit an applied migration.
 - `seed/local.sql` — local-only sample business settings, services, hashed demo accounts and demo working hours.
-- `scripts/` — local password-hash generation and PBKDF2 benchmark commands.
+- `scripts/` — local password-hash generation (demo and Admin bootstrap) and PBKDF2 benchmark commands.
 - `tests/` — schema, repository, auth and Worker API tests using an in-memory D1 adapter.
 - `src/mock/` — in-memory repository and seed data with API-shaped functions.
 - `src/lib/` — time, availability and React hook helpers.

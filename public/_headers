@@ -1,0 +1,7 @@
+# Baseline headers for static pages. The Worker adds stricter no-referrer,
+# no-store and noindex headers for /cancel/* (see worker/routes/app-shell.ts).
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()

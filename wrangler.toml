@@ -5,12 +5,14 @@ main = "worker/index.ts"
 compatibility_date = "2026-11-16"
 
 # The Vite client is built to ./dist and served by Workers static assets.
-# Only /api/* is routed to the Hono Worker; every other request falls back to
-# the single-page app.
+# /api/* is routed to the Hono Worker. /cancel/* is also Worker-first so the
+# guest cancellation page can be served with no-referrer, no-store and noindex
+# headers. Every other request falls back to the single-page app.
 [assets]
 directory = "./dist"
+binding = "ASSETS"
 not_found_handling = "single-page-application"
-run_worker_first = ["/api/*"]
+run_worker_first = ["/api/*", "/cancel/*"]
 
 [vars]
 ENVIRONMENT = "development"
