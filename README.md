@@ -66,7 +66,7 @@ The project owner plans to deploy the production app on Cloudflare:
 
 Deployment is Phase 10 work and has not happened yet. No Cloudflare resources, billing or production data exist for this project. The current mock is not suitable for production deployment because it keeps data in memory and uses plaintext demo credentials.
 
-`DEPLOYMENT.md` is the Phase 10 runbook: preflight checks, the PBKDF2 plan decision, production D1 creation and migrations, business settings and first-Admin bootstrap, secrets, deploy, smoke tests, rollback and known limitations. Every remote command remains blocked until the owner approves that exact step.
+`docs/DEPLOYMENT.md` is the Phase 10 runbook: preflight checks, the PBKDF2 plan decision, production D1 creation and migrations, business settings and first-Admin bootstrap, secrets, deploy, smoke tests, rollback and known limitations. Every remote command remains blocked until the owner approves that exact step.
 
 ## Implemented flows
 
@@ -135,7 +135,7 @@ Quality and deployment preparation (Phase 10, in progress):
 - `/cancel/*` is Worker-first so the guest cancellation page is served with `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, `X-Robots-Tag: noindex, nofollow` and `X-Content-Type-Options: nosniff`. Guest tokens are redacted from error-log paths.
 - `public/_headers` adds conservative baseline headers (`X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`) to static pages.
 - `npm run auth:hash:admin` generates a one-time Admin INSERT with a PBKDF2 hash for production bootstrap; the plaintext password is never printed.
-- `DEPLOYMENT.md` documents the approval-gated production runbook. Deployment is still not performed, and the PBKDF2 CPU-limit decision remains unresolved.
+- `docs/DEPLOYMENT.md` documents the approval-gated production runbook. Deployment is still not performed, and the PBKDF2 CPU-limit decision remains unresolved.
 - Client integration and the UI accessibility/responsive checks are still deferred because the React flows remain mock-backed.
 
 Mock UI (still in memory):
@@ -155,6 +155,8 @@ Deferred: admin workspace UI, admin-issued staff passwords/forced password chang
 
 ## Source layout
 
+- `AGENTS.md` — short source of truth for agent behavior, product decisions, security rules and phase status.
+- `docs/` — on-demand references: `API.md` (routes and contracts), `DATABASE.md` (schema and concurrency), `TESTING.md` (test matrix), `DEPLOYMENT.md` (Phase 10 runbook) and `UI_DESIGN.md` (Figma direction, tokens, states).
 - `worker/` — Hono app, auth/public/staff/admin routes, middleware, error envelope, availability engine and typed D1 repositories.
 - `worker/email/` — email event contract, HTML/text templates and the console/Resend/no-op transports.
 - `worker/auth/` — password hashing, session cookies, role middleware and rate limiting.
@@ -172,4 +174,4 @@ Deferred: admin workspace UI, admin-issued staff passwords/forced password chang
 - `src/pages/` — customer routes and `pages/staff/` workspace routes.
 - `src/styles/base.css` — design tokens and component styles.
 
-See `AGENTS (1).md` for product rules and the phase status, plus `API.md`, `DATABASE.md`, `TESTING.md` and `UI_DESIGN (1).md` for detailed references.
+See `AGENTS.md` for product rules and the phase status, plus `docs/API.md`, `docs/DATABASE.md`, `docs/TESTING.md`, `docs/DEPLOYMENT.md` and `docs/UI_DESIGN.md` for detailed references.

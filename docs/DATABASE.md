@@ -1,6 +1,6 @@
 # Slotly Database Design
 
-**Status:** Implemented by `migrations/0001_initial_schema.sql` (16 November 2026). This document is the detailed source for schema, indexes, integrity and concurrency; `AGENTS (1).md` contains the non-negotiable product rules. Never edit an applied migration; add a new ordered migration instead.
+**Status:** Implemented by `migrations/0001_initial_schema.sql` (16 November 2026). This document is the detailed source for schema, indexes, integrity and concurrency; `AGENTS.md` contains the non-negotiable product rules. Never edit an applied migration; add a new ordered migration instead.
 
 ## 1. Database conventions
 
