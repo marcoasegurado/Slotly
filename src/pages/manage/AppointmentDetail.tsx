@@ -78,6 +78,7 @@ export function AppointmentDetailPage({ area }: AppointmentDetailPageProps) {
     return (
       <div className="workspace-page">
         <Card>
+          <h1 className="visually-hidden">Appointment</h1>
           <div className="skeleton-row">
             <div className="skeleton" style={{ width: '35%' }} />
             <div className="skeleton" style={{ width: '75%' }} />
@@ -94,6 +95,7 @@ export function AppointmentDetailPage({ area }: AppointmentDetailPageProps) {
         <Card>
           <StateBlock
             icon="?"
+            headingLevel={1}
             title="That appointment is not available"
             actions={
               <Link className={buttonClassName('primary')} to={manage.basePath}>

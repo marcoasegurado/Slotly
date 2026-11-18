@@ -12,6 +12,7 @@ export function NotFoundPage() {
       <Card>
         <StateBlock
           icon="404"
+          headingLevel={1}
           title="That page does not exist"
           actions={
             <>

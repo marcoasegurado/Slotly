@@ -62,6 +62,7 @@ export function BookingDetailPage() {
         <Card>
           <StateBlock
             icon="?"
+            headingLevel={1}
             title="That appointment is not available"
             actions={
               <>
@@ -85,6 +86,7 @@ export function BookingDetailPage() {
     return (
       <div className="container main--narrow">
         <Card>
+          <h1 className="visually-hidden">Booking details</h1>
           <div className="skeleton-row">
             <div className="skeleton" style={{ width: '40%' }} />
             <div className="skeleton" style={{ width: '70%' }} />
@@ -101,6 +103,7 @@ export function BookingDetailPage() {
         <Card>
           <StateBlock
             icon="!"
+            headingLevel={1}
             title="We could not load that appointment"
             actions={
               <Button variant="secondary" size="sm" onClick={booking.reload}>
@@ -121,6 +124,7 @@ export function BookingDetailPage() {
         <Card>
           <StateBlock
             icon="?"
+            headingLevel={1}
             title="That appointment is not available"
             actions={
               <>

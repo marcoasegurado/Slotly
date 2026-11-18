@@ -78,6 +78,7 @@ export function RequestReceivedPage() {
     return (
       <div className="container main--narrow">
         <Card>
+          <h1 className="visually-hidden">Request received</h1>
           <div className="skeleton-row">
             <div className="skeleton" style={{ width: '40%' }} />
             <div className="skeleton" style={{ width: '70%' }} />
@@ -94,6 +95,7 @@ export function RequestReceivedPage() {
         <Card>
           <StateBlock
             icon="?"
+            headingLevel={1}
             title="We could not find that request"
             actions={
               <>

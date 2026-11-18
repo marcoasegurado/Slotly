@@ -4,5 +4,6 @@
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
     "types": ["@cloudflare/workers-types", "node"]
   },
-  "include": ["worker/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts", "vitest.config.ts"]
+  "include": ["worker/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts", "vitest.config.ts"],
+  "exclude": ["tests/client/**"]
 }

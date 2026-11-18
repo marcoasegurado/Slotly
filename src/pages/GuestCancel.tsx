@@ -80,6 +80,7 @@ export function GuestCancelPage() {
         <div className="container main--narrow">
           {resolution.loading && !appointment ? (
             <Card>
+              <h1 className="visually-hidden">Manage your request</h1>
               <div className="skeleton-row">
                 <div className="skeleton" style={{ width: '40%' }} />
                 <div className="skeleton" style={{ width: '75%' }} />
@@ -90,6 +91,7 @@ export function GuestCancelPage() {
               <StateBlock
                 icon="✓"
                 tone="success"
+                headingLevel={1}
                 title="Request cancelled"
                 actions={
                   <Link className={buttonClassName('primary')} to="/book">
@@ -185,6 +187,7 @@ export function GuestCancelPage() {
             <Card>
               <StateBlock
                 icon="–"
+                headingLevel={1}
                 title="This link is no longer available"
                 actions={
                   <Link className={buttonClassName('secondary')} to="/">

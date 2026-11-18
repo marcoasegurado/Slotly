@@ -32,6 +32,7 @@ export function SiteHeader() {
           )}
           {session ? (
             <>
+              <NavLink to="/change-password">Change password</NavLink>
               <span className="meta" style={{ paddingInline: 'var(--space-2)' }}>
                 {session.name}
               </span>

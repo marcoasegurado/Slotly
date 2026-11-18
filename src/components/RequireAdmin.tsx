@@ -28,6 +28,7 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
         <Card>
           <StateBlock
             icon="!"
+            headingLevel={1}
             title="Admin access only"
             actions={
               <>

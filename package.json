@@ -18,7 +18,12 @@
     "auth:bench": "vite-node scripts/benchmark-password.ts",
     "admin:reset": "vite-node scripts/reset-admin-password.ts",
     "staff:create": "vite-node scripts/create-staff.ts",
-    "services:create": "vite-node scripts/create-services.ts"
+    "services:create": "vite-node scripts/create-services.ts",
+    "qa:ui:audit": "node scripts/ui-qa/audit.mjs",
+    "qa:ui:flows": "node scripts/ui-qa/flows.mjs",
+    "qa:ui:accounts": "node scripts/ui-qa/accounts.mjs",
+    "qa:ui:fixture": "wrangler d1 execute DB --local --file=./scripts/ui-qa/fixtures/forced-password-user.sql",
+    "qa:ui:cleanup": "wrangler d1 execute DB --local --file=./scripts/ui-qa/cleanup.sql"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.0.0",

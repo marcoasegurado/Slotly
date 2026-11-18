@@ -1,6 +1,6 @@
 # Slotly
 
-Appointment booking for one small business. The React/Vite UI runs against an in-memory mock repository for booking, customer and staff flows. Phase 3 adds the Cloudflare Worker, Hono API and D1 schema foundation, Phase 4 adds password hashing, D1-backed sessions, role middleware and auth routes, Phase 5 adds service management, staff schedules and the availability engine, Phase 6 adds guest/customer booking creation and cancellation, Phase 7 adds staff approval/rejection/rescheduling plus admin reassignment, Phase 8 adds transactional email through a D1 outbox with inline sends and scheduled retries, Phase 9 adds the admin dashboard, aggregate report summary and CSV export, and Phase 10 begins quality and deployment preparation with strict guest-cancellation-page headers and an approval-gated deployment runbook. The public business/services reads are wired to the Worker; the other client flows remain mock-backed until their API phases.
+Appointment booking for one small business. The React/Vite client is wired to the Hono API on Cloudflare Workers with D1 persistence: public business/services and availability, guest and customer booking plus cancellation, customer history, staff review/reschedule/availability, and admin appointment, service, dashboard and report screens. Phase 3 added the Worker, Hono API and D1 schema foundation, Phase 4 password hashing, D1-backed sessions, role middleware and auth routes, Phase 5 service management, staff schedules and the availability engine, Phase 6 guest/customer booking creation and cancellation, Phase 7 staff approval/rejection/rescheduling plus admin reassignment, Phase 8 transactional email through a D1 outbox with inline sends and scheduled retries, Phase 9 the admin dashboard, aggregate report summary and CSV export, and Phase 10 the live client wiring, strict guest-cancellation-page headers, browser QA harness and an approval-gated deployment runbook.
 
 ## Run locally
 
@@ -29,7 +29,19 @@ npm test
 npm run build
 ```
 
-The mock database resets on every reload. The demo banner in the app can reset it manually. Local D1 state lives in `.wrangler/` and is ignored by Git.
+With both dev servers running and local D1 seeded, the browser QA harness drives a real
+Chromium-family browser through the client flows (see `docs/TESTING.md` §11):
+
+```bash
+npm run qa:ui:audit      # signed-out page audit at 390/768/1440
+npm run qa:ui:flows      # booking, cancellation, customer, staff, admin, responsive
+npm run qa:ui:fixture    # adds the forced-password QA account (local D1 only)
+npm run qa:ui:accounts   # availability conflicts, password change, forced change
+npm run qa:ui:cleanup    # removes QA accounts (local D1 only)
+```
+
+Local D1 state lives in `.wrangler/` and is ignored by Git. Browser QA runs create real
+local bookings; reseed with `npm run db:seed:local` for a clean demo dataset.
 
 Mutating API requests require an `Origin` header that exactly matches the Worker origin, for example:
 
@@ -54,9 +66,9 @@ The Vite proxy preserves the browser origin, so requests from `http://localhost:
 | Staff | `ciel@slotly.studio` | `slotly-demo` |
 | Admin | `admin@slotly.studio` | `slotly-demo` |
 
-These accounts exist in the local D1 seed with PBKDF2 hashes; the seed never contains plaintext passwords. The seed also gives Ana, Ben and Ciel demo weekly working hours so availability and schedule endpoints have realistic data. Guests can book without an account. A guest cancellation link is shown on the request-received page.
+These accounts exist in the local D1 seed with PBKDF2 hashes; the seed never contains plaintext passwords. The seed also gives Ana, Ben and Ciel demo weekly working hours so availability and schedule endpoints have realistic data. Guests can book without an account. A guest cancellation link is shown on the request-received page and emailed once transactional email is enabled.
 
-The mock UI still uses its own in-memory demo sign-in. The Worker auth routes are exercised directly or through the API until the client auth flow is wired in a later phase.
+The React client signs in against the Worker with an `HttpOnly` session cookie. `npm run qa:ui:audit|flows|accounts` exercises these accounts in a real browser against local D1, and `npm run qa:ui:cleanup` removes the QA-only accounts it creates.
 
 ## Deployment target
 

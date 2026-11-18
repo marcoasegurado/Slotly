@@ -28,6 +28,7 @@ export function RequireStaff({ children }: { children: ReactNode }) {
         <Card>
           <StateBlock
             icon="!"
+            headingLevel={1}
             title="Staff access only"
             actions={
               <>

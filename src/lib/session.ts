@@ -88,7 +88,14 @@ export async function updatePassword(input: {
   currentPassword: string
   newPassword: string
 }): Promise<AuthUser> {
-  const user = await changePassword(input)
+  // The change endpoint returns 204 and keeps this session, so refresh the
+  // session instead of expecting the updated user in the response body.
+  await changePassword(input)
+  const user = await getSession()
+  if (!user) {
+    publish({ status: 'ready', user: null })
+    throw new ApiError(401, 'UNAUTHENTICATED', 'Sign in again to continue.')
+  }
   publish({ status: 'ready', user })
   return user
 }

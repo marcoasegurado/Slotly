@@ -150,3 +150,46 @@ Use local D1/test bindings. Never run destructive tests against production.
 - `.dev.vars`, real D1 IDs, secrets and bootstrap SQL files are not committed.
 - The production smoke checklist in `DEPLOYMENT.md` is completed after the owner approves each remote step.
 - Accessibility and responsive checks run against real client flows only after those flows are wired to the API.
+
+## 11. Browser QA harness (local only)
+
+`scripts/ui-qa/` is a dependency-free Chrome DevTools Protocol harness. It drives a real
+Chromium-family browser through the wired client and asserts on rendered pages, not on mock
+data. It uses Node's built-in `WebSocket`, so there is no Playwright/Puppeteer dependency and
+no install step beyond Node 22+ and a local Chrome or Edge.
+
+**Prerequisites**
+
+- Local D1 migrated and seeded: `npm run db:migrate:local` and `npm run db:seed:local`.
+- `npm run dev:worker` (API on 8787) and `npm run dev` (Vite on 5173, `/api` proxied).
+- A Chromium-family browser. Override detection with `CHROME_PATH`; set `QA_BASE_URL` if the
+  client is served elsewhere, `QA_PORT` for the debugging port and `QA_OUT` for artifacts
+  (default `qa-artifacts/`, gitignored).
+
+**Suites**
+
+| Command | What it verifies |
+|---|---|
+| `npm run qa:ui:audit` | Signed-out routes at 390/768/1440: exactly one `h1`, no duplicate ids, every field labelled, no unnamed buttons/links, image alt text, no heading-level jumps, no horizontal overflow, no unexpected console/network errors. |
+| `npm run qa:ui:flows` | Guest booking → request received → private cancel page GET/POST → single-use link; customer sign-in, booking, history and cancel dialog; staff queue, decline with reason, approve; admin queue, reschedule/reassignment controls, cancel dialog, new-service form; dialog keyboard containment and viewport fit; responsive checks on staff/admin pages. |
+| `npm run qa:ui:fixture` | Adds `qa-forced@example.com` (`must_change_password=1`) to **local D1 only** for the forced-password check. |
+| `npm run qa:ui:accounts` | Creates and approves a booking, then checks the staff time-off conflict block lists the affected reference, adds and removes free time off, performs a voluntary password change (new password works, old rejected), and verifies the forced first-login password change clears the flag. |
+| `npm run qa:ui:cleanup` | Deletes QA-only accounts (`qa-*@example.com`, `usr_qa_forced`) and their sessions from **local D1 only**. |
+
+**Expected, non-defect responses**
+
+- `401` from `/api/auth/me` while signed out (the session probe).
+- `404` from `/api/public/guest-cancellation/<unknown-token>` (generic invalid-link response).
+
+Both are filtered explicitly, so any other 4xx/5xx, console error, exception or failed request
+fails the audit.
+
+**Notes**
+
+- Every flow writes real rows to local D1. Reseed for a clean demo (`npm run db:seed:local`).
+- The forced-password fixture is consumed by the first successful change; rerun
+  `npm run qa:ui:fixture` before rerunning `qa:ui:accounts`.
+- Passwords in scripts are the documented local demo password; never reuse the harness against
+  the deployed app or with production credentials.
+- Verified 18 November 2026 on Windows with Chrome: audit 33/33 page-width checks, flows and
+  accounts at 0 failures, plus `npm run typecheck`, `npm test` (159 tests) and `npm run build`.

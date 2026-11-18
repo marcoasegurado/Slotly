@@ -32,6 +32,7 @@ export function MyAppointmentsPage() {
         <Card>
           <StateBlock
             icon="→"
+            headingLevel={1}
             title="Sign in to see your appointments"
             actions={
               <>
@@ -58,6 +59,7 @@ export function MyAppointmentsPage() {
         <Card>
           <StateBlock
             icon="→"
+            headingLevel={1}
             title="Customer appointments live in a customer account"
             actions={
               <>

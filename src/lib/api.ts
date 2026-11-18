@@ -407,11 +407,15 @@ export function logout(): Promise<null> {
   return request<null>('/api/auth/logout', { method: 'POST' })
 }
 
+/**
+ * The Worker answers `204 No Content` and keeps the current session, so the
+ * caller must re-read `/api/auth/me` instead of expecting a user payload.
+ */
 export function changePassword(input: {
   currentPassword: string
   newPassword: string
-}): Promise<AuthUser> {
-  return request<AuthUser>('/api/auth/change-password', {
+}): Promise<null> {
+  return request<null>('/api/auth/change-password', {
     method: 'POST',
     body: input,
   })

@@ -54,6 +54,7 @@ function PublicDataError({ message }: { message: string }) {
       <Card>
         <StateBlock
           icon="!"
+          headingLevel={1}
           title="Slotly could not load the business settings"
           actions={
             <Button variant="secondary" size="sm" onClick={() => window.location.reload()}>

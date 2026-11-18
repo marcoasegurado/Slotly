@@ -36,6 +36,9 @@ export function AdminLayout() {
               <span className="workspace__identity-email">{session.email}</span>
             </div>
           ) : null}
+          <Link className="text-sm" to="/change-password">
+            Change password
+          </Link>
           <Button
             variant="ghost"
             size="sm"

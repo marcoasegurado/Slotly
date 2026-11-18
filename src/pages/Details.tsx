@@ -49,6 +49,7 @@ export function DetailsPage() {
   if (services.loading && !services.data) {
     return (
       <div className="container main--narrow">
+        <h1>Your details</h1>
         <p className="meta">Loading…</p>
       </div>
     )
@@ -59,6 +60,7 @@ export function DetailsPage() {
       <div className="container main--narrow">
         <Card>
           <StateBlock
+            headingLevel={1}
             title="That booking link is incomplete"
             actions={
               <Link className={buttonClassName('primary')} to="/book">

@@ -123,6 +123,7 @@ export function DateTimePage() {
   if (services.loading && !services.data) {
     return (
       <div className="container main--narrow">
+        <h1>Pick a date and time</h1>
         <p className="meta">Loading times…</p>
       </div>
     )
@@ -134,6 +135,7 @@ export function DateTimePage() {
         <Card>
           <StateBlock
             icon="!"
+            headingLevel={1}
             title="We could not load this service"
             actions={
               <Button variant="secondary" size="sm" onClick={services.reload}>

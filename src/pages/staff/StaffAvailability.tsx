@@ -80,6 +80,7 @@ export function StaffAvailabilityPage() {
     return (
       <div className="workspace-page">
         <Card>
+          <h1 className="visually-hidden">My working hours</h1>
           <div className="skeleton-row">
             <div className="skeleton" style={{ width: '35%' }} />
             <div className="skeleton" style={{ width: '70%' }} />
@@ -95,6 +96,7 @@ export function StaffAvailabilityPage() {
         <Card>
           <StateBlock
             icon="!"
+            headingLevel={1}
             title="Your staff profile could not be loaded"
             actions={
               <Button variant="secondary" size="sm" onClick={schedule.reload}>
