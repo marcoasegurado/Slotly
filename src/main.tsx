@@ -13,6 +13,7 @@ import './styles/tokens.css'
 import './styles/base.css'
 import { App } from './App'
 import { hydratePublicData } from './lib/public-api'
+import { startSession } from './lib/session'
 
 const container = document.getElementById('root')
 if (!container) {
@@ -22,6 +23,7 @@ if (!container) {
 // Load the real public business/services data when the Worker is available.
 // The remaining booking and workspace flows stay mock-backed for now.
 void hydratePublicData()
+void startSession()
 
 createRoot(container).render(
   <StrictMode>

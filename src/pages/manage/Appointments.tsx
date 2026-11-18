@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { listStaffAppointments } from '../../mock/api'
-import type { AppointmentStatus } from '../../mock/types'
-import { useAsync, useDocumentTitle, useMockDb } from '../../lib/hooks'
+import type { AppointmentStatus } from '../../lib/api'
+import { type ManagementArea, managementFor } from '../../lib/manage'
+import { useAsync, useDocumentTitle, useBusiness } from '../../lib/hooks'
 import { Button } from '../../components/Button'
 import { Card, CardHeader } from '../../components/Card'
-import { StaffAppointmentRow } from '../../components/StaffAppointmentRow'
+import { TextField } from '../../components/Field'
+import { ManagedAppointmentRow } from '../../components/ManagedAppointmentRow'
 import { StateBlock } from '../../components/StateBlock'
 
 const STATUS_FILTERS: Array<{ value: AppointmentStatus | 'all'; label: string }> = [
@@ -15,38 +16,54 @@ const STATUS_FILTERS: Array<{ value: AppointmentStatus | 'all'; label: string }>
   { value: 'cancelled', label: 'Cancelled' },
 ]
 
-const SCOPE_FILTERS = [
+const STAFF_SCOPE_FILTERS = [
   { value: 'today' as const, label: 'Today' },
   { value: 'upcoming' as const, label: 'Upcoming' },
   { value: 'all' as const, label: 'All time' },
 ]
 
-export function StaffAppointmentsPage() {
-  useDocumentTitle('Staff appointments')
-  const db = useMockDb()
+interface AppointmentsPageProps {
+  area: ManagementArea
+}
+
+export function AppointmentsPage({ area }: AppointmentsPageProps) {
+  const manage = managementFor(area)
+  useDocumentTitle(area === 'admin' ? 'All appointments' : 'Staff appointments')
+  const business = useBusiness()
+
   const [status, setStatus] = useState<AppointmentStatus | 'all'>('all')
   const [scope, setScope] = useState<'today' | 'upcoming' | 'all'>('upcoming')
+  const [search, setSearch] = useState('')
+  const [appliedSearch, setAppliedSearch] = useState('')
 
   const appointments = useAsync(
-    () => listStaffAppointments({ status, scope }),
-    [db, status, scope],
+    () =>
+      manage.list({
+        status,
+        ...(area === 'staff' ? { scope } : {}),
+        search: area === 'admin' ? appliedSearch : undefined,
+      }),
+    [area, status, scope, appliedSearch],
   )
 
   return (
     <div className="workspace-page stack stack--loose">
       <div className="stack stack--tight">
         <span className="eyebrow">Queue</span>
-        <h1 style={{ fontSize: '2rem' }}>Appointments</h1>
+        <h1 style={{ fontSize: '2rem' }}>
+          {area === 'admin' ? 'Appointments' : 'My appointments'}
+        </h1>
         <p className="lede">
-          Only appointments assigned to you appear here. Pending requests are not
-          confirmed until you approve them.
+          {area === 'admin'
+            ? 'Every appointment in the business. Pending requests are not confirmed until someone approves them.'
+            : 'Only appointments assigned to you appear here. Pending requests are not confirmed until you approve them.'}
         </p>
       </div>
 
       <Card flush>
         <div className="workspace-card-head">
           <CardHeader
-            title="Assigned appointments"
+            title="Appointments"
             action={<span className="meta">{appointments.data?.length ?? 0}</span>}
           />
         </div>
@@ -66,19 +83,40 @@ export function StaffAppointmentsPage() {
             ))}
           </div>
 
-          <div className="filter-group" role="group" aria-label="Filter by date">
-            {SCOPE_FILTERS.map((filter) => (
-              <button
-                key={filter.value}
-                type="button"
-                className="filter-chip"
-                aria-pressed={scope === filter.value}
-                onClick={() => setScope(filter.value)}
-              >
-                {filter.label}
-              </button>
-            ))}
-          </div>
+          {area === 'staff' ? (
+            <div className="filter-group" role="group" aria-label="Filter by date">
+              {STAFF_SCOPE_FILTERS.map((filter) => (
+                <button
+                  key={filter.value}
+                  type="button"
+                  className="filter-chip"
+                  aria-pressed={scope === filter.value}
+                  onClick={() => setScope(filter.value)}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <form
+              className="row"
+              style={{ gap: 'var(--space-2)', alignItems: 'flex-end' }}
+              onSubmit={(event) => {
+                event.preventDefault()
+                setAppliedSearch(search)
+              }}
+            >
+              <TextField
+                label="Search"
+                placeholder="Reference, name or email"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+              <Button type="submit" variant="secondary" size="sm">
+                Search
+              </Button>
+            </form>
+          )}
         </div>
 
         {appointments.loading && !appointments.data ? (
@@ -93,7 +131,7 @@ export function StaffAppointmentsPage() {
           <div className="workspace-empty">
             <StateBlock
               icon="!"
-              title="We could not load your appointments"
+              title="We could not load appointments"
               actions={
                 <Button variant="secondary" size="sm" onClick={appointments.reload}>
                   Try again
@@ -106,17 +144,19 @@ export function StaffAppointmentsPage() {
         ) : appointments.data && appointments.data.length > 0 ? (
           <ul className="staff-list">
             {appointments.data.map((appointment) => (
-              <StaffAppointmentRow
-                key={appointment.id}
+              <ManagedAppointmentRow
+                key={appointment.publicReference}
                 appointment={appointment}
-                timezone={db.business.timezone}
+                timezone={business.timezone}
+                basePath={manage.basePath}
+                showStaff={area === 'admin'}
               />
             ))}
           </ul>
         ) : (
           <div className="workspace-empty">
             <StateBlock icon="0" title="No appointments match these filters">
-              Try a different status or date range. New requests will appear here
+              Try a different status or search. New requests appear here
               automatically.
             </StateBlock>
           </div>

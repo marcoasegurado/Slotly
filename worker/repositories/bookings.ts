@@ -72,6 +72,7 @@ function toBooking(row: AppointmentRow): Booking {
     endAt: row.end_at,
     status: row.status,
     customerNote: row.customer_note,
+    resolutionNote: row.resolution_note,
     guestName: row.guest_name,
     guestEmail: row.guest_email,
     createdAt: row.created_at,
@@ -228,6 +229,46 @@ export class BookingsRepository {
       appointmentId: row.appointment_id,
       publicReference: row.public_reference,
     }
+  }
+
+  /**
+   * Reads the safe summary for the confirmation page. Same validity rules as
+   * `findGuestToken`, but it never mutates the appointment or the token.
+   */
+  async findGuestTokenSummary(
+    tokenHash: string,
+    now: number,
+  ): Promise<{
+    publicReference: string
+    serviceName: string
+    durationMinutes: number
+    startAt: number
+    endAt: number
+  } | null> {
+    return this.db
+      .prepare(
+        `SELECT a.public_reference AS publicReference,
+                a.service_name_snapshot AS serviceName,
+                a.duration_minutes_snapshot AS durationMinutes,
+                a.start_at AS startAt,
+                a.end_at AS endAt
+           FROM guest_cancellation_tokens t
+           JOIN appointments a ON a.id = t.appointment_id
+          WHERE t.token_hash = ?
+            AND t.used_at IS NULL
+            AND t.invalidated_at IS NULL
+            AND t.expires_at > ?
+            AND a.status = 'pending'
+            AND a.customer_user_id IS NULL`,
+      )
+      .bind(tokenHash, now)
+      .first<{
+        publicReference: string
+        serviceName: string
+        durationMinutes: number
+        startAt: number
+        endAt: number
+      }>()
   }
 
   /**

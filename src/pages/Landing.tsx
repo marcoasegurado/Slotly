@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
-import { listServices } from '../mock/api'
-import { useAsync, useDocumentTitle, useMockDb } from '../lib/hooks'
+import { listServices } from '../lib/api'
+import { useAsync, useDocumentTitle, useBusiness } from '../lib/hooks'
 import { formatDuration } from '../lib/time'
 import { buttonClassName } from '../components/Button'
 
@@ -24,7 +24,7 @@ const STEPS = [
 
 export function LandingPage() {
   useDocumentTitle('Book an appointment')
-  const db = useMockDb()
+  const business = useBusiness()
   const services = useAsync(() => listServices(), [])
 
   return (
@@ -37,7 +37,7 @@ export function LandingPage() {
           </h1>
           <p className="lede">
             Choose a service, pick a time that suits you, and send a request.
-            The {db.business.businessName} team reviews every booking before it
+            The {business.businessName} team reviews every booking before it
             is confirmed — no double-bookings, no guessing.
           </p>
           <div className="row row--wrap">

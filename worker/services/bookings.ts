@@ -158,6 +158,7 @@ export async function createBooking(
     endAt: slot.endAt,
     status: 'pending',
     customerNote: input.customerNote,
+    resolutionNote: null,
     guestName: isGuest ? input.guestName : null,
     guestEmail: isGuest ? input.guestEmail : null,
     createdAt,
@@ -289,6 +290,30 @@ export async function cancelCustomerBooking(
   }
 
   return await getCustomerBooking(db, customerUserId, publicReference)
+}
+
+/**
+ * Read-only summary for the guest cancellation confirmation page. The same
+ * validity rules apply as cancellation, but nothing is mutated, so a GET is
+ * safe and every invalid/used/expired token gets the same generic response.
+ */
+export async function resolveGuestCancellation(
+  db: D1Database,
+  token: string,
+  now: Date = new Date(),
+): Promise<{
+  publicReference: string
+  serviceName: string
+  durationMinutes: number
+  startAt: number
+  endAt: number
+}> {
+  const summary = await new BookingsRepository(db).findGuestTokenSummary(
+    await sha256Hex(token),
+    unixSeconds(now.getTime()),
+  )
+  if (!summary) throw cancellationUnavailable()
+  return summary
 }
 
 export async function cancelGuestBooking(

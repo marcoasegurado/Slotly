@@ -1,23 +1,21 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import {
   addMyTimeOff,
   ApiError,
-  getMyAvailability,
+  getMySchedule,
   removeMyTimeOff,
-  updateMyAvailability,
-} from '../../mock/api'
-import {
-  errorMessage,
-  useDocumentTitle,
-  useMockDb,
-  useStaff,
-} from '../../lib/hooks'
+  updateMySchedule,
+  type AffectedBooking,
+  type TimeOff,
+} from '../../lib/api'
+import { errorMessage, useAsync, useDocumentTitle, useBusiness } from '../../lib/hooks'
 import {
   addDaysToDateKey,
   formatDateKey,
   formatMinutesOfDay,
+  formatTime,
   formatTimeRange,
   minutesToTimeInput,
   parseTimeInput,
@@ -26,7 +24,6 @@ import {
   weekdayLabel,
   zonedTimeToUtc,
 } from '../../lib/time'
-import type { Appointment, TimeOff, WorkingInterval } from '../../mock/types'
 import { Button } from '../../components/Button'
 import { Card, CardHeader } from '../../components/Card'
 import { TextField } from '../../components/Field'
@@ -34,8 +31,10 @@ import { StateBlock } from '../../components/StateBlock'
 
 const WEEKDAYS = [1, 2, 3, 4, 5, 6, 0] as const
 
-function cloneIntervals(intervals: WorkingInterval[]): WorkingInterval[] {
-  return intervals.map((interval) => ({ ...interval }))
+interface WorkingInterval {
+  weekday: number
+  startMinute: number
+  endMinute: number
 }
 
 function sortIntervals(intervals: WorkingInterval[]): WorkingInterval[] {
@@ -46,32 +45,65 @@ function sortIntervals(intervals: WorkingInterval[]): WorkingInterval[] {
 
 export function StaffAvailabilityPage() {
   useDocumentTitle('My availability')
-  const db = useMockDb()
-  const staff = useStaff()
+  const business = useBusiness()
+  const timezone = business.timezone
+  const schedule = useAsync(() => getMySchedule(), [])
 
-  const [intervals, setIntervals] = useState<WorkingInterval[]>(() =>
-    staff ? cloneIntervals(staff.intervals) : [],
-  )
-  const [timeOff, setTimeOff] = useState<TimeOff[]>(() =>
-    staff ? staff.timeOff.map((entry) => ({ ...entry })) : [],
-  )
+  const [intervals, setIntervals] = useState<WorkingInterval[]>([])
+  const [timeOff, setTimeOff] = useState<TimeOff[]>([])
+  const [loaded, setLoaded] = useState(false)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
-  const [conflicts, setConflicts] = useState<Appointment[]>([])
+  const [conflicts, setConflicts] = useState<AffectedBooking[]>([])
 
-  const today = todayDateKey(db.business.timezone)
+  const today = todayDateKey(timezone)
   const [timeOffDate, setTimeOffDate] = useState(addDaysToDateKey(today, 1))
   const [timeOffStart, setTimeOffStart] = useState('09:00')
   const [timeOffEnd, setTimeOffEnd] = useState('10:00')
   const [timeOffReason, setTimeOffReason] = useState('')
 
-  if (!staff) {
+  useEffect(() => {
+    if (!schedule.data || loaded) return
+    setIntervals(
+      schedule.data.workingHours.map((entry) => ({
+        weekday: entry.weekday,
+        startMinute: entry.startMinute,
+        endMinute: entry.endMinute,
+      })),
+    )
+    setTimeOff(schedule.data.timeOff)
+    setLoaded(true)
+  }, [schedule.data, loaded])
+
+  if (schedule.loading && !loaded) {
     return (
       <div className="workspace-page">
         <Card>
-          <StateBlock icon="!" title="Your staff profile could not be loaded">
-            Sign out and sign in again with a staff account.
+          <div className="skeleton-row">
+            <div className="skeleton" style={{ width: '35%' }} />
+            <div className="skeleton" style={{ width: '70%' }} />
+          </div>
+        </Card>
+      </div>
+    )
+  }
+
+  if (schedule.error || !schedule.data) {
+    return (
+      <div className="workspace-page">
+        <Card>
+          <StateBlock
+            icon="!"
+            title="Your staff profile could not be loaded"
+            actions={
+              <Button variant="secondary" size="sm" onClick={schedule.reload}>
+                Try again
+              </Button>
+            }
+          >
+            {schedule.error?.message ??
+              'Sign out and sign in again with a staff account.'}
           </StateBlock>
         </Card>
       </div>
@@ -112,13 +144,21 @@ export function StaffAvailabilityPage() {
     setActionError(null)
     setConflicts([])
     try {
-      const result = await updateMyAvailability(sortIntervals(intervals))
-      setIntervals(cloneIntervals(result.intervals))
+      const result = await updateMySchedule(sortIntervals(intervals))
+      setIntervals(
+        result.workingHours.map((entry) => ({
+          weekday: entry.weekday,
+          startMinute: entry.startMinute,
+          endMinute: entry.endMinute,
+        })),
+      )
       setTimeOff(result.timeOff)
       setNotice('Weekly hours saved.')
     } catch (cause) {
       if (cause instanceof ApiError && cause.code === 'SCHEDULE_CHANGE_CONFLICT') {
-        setConflicts(cause.details.affectedAppointments ?? [])
+        setConflicts(
+          (cause.details.affectedBookings as AffectedBooking[] | undefined) ?? [],
+        )
       }
       setActionError(errorMessage(cause))
     } finally {
@@ -141,18 +181,14 @@ export function StaffAvailabilityPage() {
       return
     }
 
-    const startAt = zonedTimeToUtc(
-      timeOffDate,
-      startMinute,
-      db.business.timezone,
-    ).toISOString()
-    const endAt = zonedTimeToUtc(
-      timeOffDate,
-      endMinute,
-      db.business.timezone,
-    ).toISOString()
+    const startAt = Math.floor(
+      zonedTimeToUtc(timeOffDate, startMinute, timezone).getTime() / 1000,
+    )
+    const endAt = Math.floor(
+      zonedTimeToUtc(timeOffDate, endMinute, timezone).getTime() / 1000,
+    )
 
-    if (Date.parse(endAt) <= Date.now()) {
+    if (endAt * 1000 <= Date.now()) {
       setActionError('Choose a time off period that has not already ended.')
       return
     }
@@ -165,14 +201,16 @@ export function StaffAvailabilityPage() {
       const entry = await addMyTimeOff({
         startAt,
         endAt,
-        reason: timeOffReason,
+        reason: timeOffReason.trim() || null,
       })
       setTimeOff((current) => [...current, entry])
       setTimeOffReason('')
       setNotice('Time off added.')
     } catch (cause) {
       if (cause instanceof ApiError && cause.code === 'SCHEDULE_CHANGE_CONFLICT') {
-        setConflicts(cause.details.affectedAppointments ?? [])
+        setConflicts(
+          (cause.details.affectedBookings as AffectedBooking[] | undefined) ?? [],
+        )
       }
       setActionError(errorMessage(cause))
     } finally {
@@ -197,26 +235,20 @@ export function StaffAvailabilityPage() {
     }
   }
 
-  const handleReset = async () => {
+  const handleReset = () => {
     if (busy) return
     setBusy(true)
     setActionError(null)
     setConflicts([])
-    try {
-      const result = await getMyAvailability()
-      setIntervals(cloneIntervals(result.intervals))
-      setTimeOff(result.timeOff)
-      setNotice(null)
-    } catch (cause) {
-      setActionError(errorMessage(cause))
-    } finally {
-      setBusy(false)
-    }
+    setLoaded(false)
+    setNotice(null)
+    setBusy(false)
+    schedule.reload()
   }
 
   const sortedTimeOff = timeOff
     .slice()
-    .sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt))
+    .sort((a, b) => a.startAt - b.startAt)
 
   return (
     <div className="workspace-page stack stack--loose">
@@ -260,19 +292,18 @@ export function StaffAvailabilityPage() {
             </div>
             <ul className="impact-list">
               {conflicts.map((appointment) => (
-                <li key={appointment.id}>
-                  <Link to={`/staff/appointments/${appointment.id}`}>
-                    {appointment.serviceNameSnapshot}
+                <li key={appointment.publicReference}>
+                  <Link to={`/staff/appointments/${appointment.publicReference}`}>
+                    <span className="mono">{appointment.publicReference}</span>
                   </Link>{' '}
-                  · <span className="mono">{appointment.publicReference}</span> ·{' '}
+                  · {appointment.status} ·{' '}
                   {formatDateKey(
-                    toDateKey(new Date(appointment.startAt), db.business.timezone),
+                    toDateKey(new Date(appointment.startAt * 1000), timezone),
                   )}{' '}
                   <span className="mono">
-                    {formatTimeRange(
-                      appointment.startAt,
-                      appointment.endAt,
-                      db.business.timezone,
+                    {formatTime(
+                      new Date(appointment.startAt * 1000).toISOString(),
+                      timezone,
                     )}
                   </span>
                 </li>
@@ -370,7 +401,7 @@ export function StaffAvailabilityPage() {
           <Button onClick={() => void handleSaveHours()} disabled={busy}>
             {busy ? 'Saving…' : 'Save weekly hours'}
           </Button>
-          <Button variant="ghost" onClick={() => void handleReset()} disabled={busy}>
+          <Button variant="ghost" onClick={handleReset} disabled={busy}>
             Reset changes
           </Button>
         </div>
@@ -425,11 +456,15 @@ export function StaffAvailabilityPage() {
                 <div>
                   <div className="timeoff-row__date">
                     {formatDateKey(
-                      toDateKey(new Date(entry.startAt), db.business.timezone),
+                      toDateKey(new Date(entry.startAt * 1000), timezone),
                     )}
                   </div>
                   <div className="meta mono">
-                    {formatTimeRange(entry.startAt, entry.endAt, db.business.timezone)}
+                    {formatTimeRange(
+                      new Date(entry.startAt * 1000).toISOString(),
+                      new Date(entry.endAt * 1000).toISOString(),
+                      timezone,
+                    )}
                   </div>
                   {entry.reason ? (
                     <div className="timeoff-row__reason">{entry.reason}</div>

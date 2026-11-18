@@ -1,17 +1,12 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import {
-  login,
-  loginWithDemoAccount,
-  loginWithDemoStaffAccount,
-  register,
-} from '../mock/api'
+import { signIn, signUp } from '../lib/session'
 import { errorMessage, useDocumentTitle } from '../lib/hooks'
 import { Button, buttonClassName } from '../components/Button'
 import { Card } from '../components/Card'
 import { TextField } from '../components/Field'
-import type { Role } from '../mock/types'
+import type { Role } from '../lib/api'
 
 type Mode = 'signin' | 'register'
 
@@ -21,7 +16,7 @@ function landingPath(role: Role, next: string | null): string {
     return next?.startsWith('/staff') ? next : '/staff'
   }
   if (role === 'admin') {
-    return next ?? '/'
+    return next?.startsWith('/admin') ? next : '/admin'
   }
   return next && !next.startsWith('/staff') ? next : '/appointments'
 }
@@ -47,10 +42,15 @@ export function SignInPage() {
     try {
       const user =
         mode === 'register'
-          ? await register({ name, email, password })
-          : await login(email, password)
-      const target = landingPath(user.role, next)
-      navigate(target, { replace: true })
+          ? await signUp({ name, email, password })
+          : await signIn(email, password)
+
+      if (user.mustChangePassword) {
+        navigate('/change-password', { replace: true })
+        return
+      }
+
+      navigate(landingPath(user.role, next), { replace: true })
     } catch (cause) {
       setError(errorMessage(cause))
     } finally {
@@ -150,46 +150,10 @@ export function SignInPage() {
 
           <hr className="rule" style={{ marginBlock: 'var(--space-5)' }} />
 
-          <div className="stack stack--tight">
-            <span className="eyebrow">Demo</span>
-            <p className="text-sm secondary">
-              Customer: maria@example.com · slotly-demo
-              <br />
-              Staff: ana@slotly.studio · slotly-demo
-            </p>
-            <div className="row row--wrap">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  void loginWithDemoAccount()
-                    .then((user) =>
-                      navigate(landingPath(user.role, next), {
-                        replace: true,
-                      }),
-                    )
-                    .catch((cause: unknown) => setError(errorMessage(cause)))
-                }}
-              >
-                Use the sample customer
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  void loginWithDemoStaffAccount()
-                    .then((user) =>
-                      navigate(landingPath(user.role, next), { replace: true }),
-                    )
-                    .catch((cause: unknown) => setError(errorMessage(cause)))
-                }}
-              >
-                Use the sample staff account
-              </Button>
-              <Link className={buttonClassName('ghost', 'btn--sm')} to="/book">
-                Book without an account
-              </Link>
-            </div>
+          <div className="row row--wrap">
+            <Link className={buttonClassName('ghost', 'btn--sm')} to="/book">
+              Book without an account
+            </Link>
           </div>
         </Card>
 

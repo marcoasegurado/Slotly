@@ -274,6 +274,64 @@ describe('GET /api/public/availability', () => {
   })
 })
 
+describe('GET /api/public/availability/month', () => {
+  it('returns one state per day and agrees with the single-day endpoint', async () => {
+    const dateKey = nextDateKey([1, 2, 3, 4, 5])
+    const month = dateKey.slice(0, 7)
+
+    const monthResponse = await request(
+      db,
+      `/api/public/availability/month?serviceId=svc_consult&month=${month}`,
+      { origin: null },
+    )
+    expect(monthResponse.status).toBe(200)
+    const monthBody = (await monthResponse.json()) as {
+      data: { month: string; days: Array<{ dateKey: string; state: string }> }
+    }
+
+    expect(monthBody.data.month).toBe(month)
+    expect(monthBody.data.days.length).toBeGreaterThanOrEqual(28)
+    const entry = monthBody.data.days.find((day) => day.dateKey === dateKey)
+    expect(entry?.state).toBe('open')
+
+    const dayResponse = await request(
+      db,
+      `/api/public/availability?serviceId=svc_consult&date=${dateKey}`,
+      { origin: null },
+    )
+    const dayBody = (await dayResponse.json()) as { data: { state: string } }
+    expect(entry?.state).toBe(dayBody.data.state)
+  })
+
+  it('validates the service and month', async () => {
+    await expectApiError(
+      await request(
+        db,
+        '/api/public/availability/month?serviceId=svc_consult&month=2026-13',
+        { origin: null },
+      ),
+      422,
+      'VALIDATION_ERROR',
+    )
+    await expectApiError(
+      await request(db, '/api/public/availability/month?month=2026-11', {
+        origin: null,
+      }),
+      422,
+      'VALIDATION_ERROR',
+    )
+    await expectApiError(
+      await request(
+        db,
+        '/api/public/availability/month?serviceId=svc_missing&month=2026-11',
+        { origin: null },
+      ),
+      404,
+      'SERVICE_NOT_FOUND',
+    )
+  })
+})
+
 describe('staff schedule routes', () => {
   it('requires the staff role', async () => {
     await expectApiError(

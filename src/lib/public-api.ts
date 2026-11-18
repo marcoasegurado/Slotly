@@ -1,5 +1,4 @@
-import type { Business, Service } from '../mock/types'
-import { applyPublicBusiness, applyPublicServices } from '../mock/store'
+import type { Business, Service } from './types'
 
 interface ApiErrorEnvelope {
   error?: {
@@ -124,16 +123,49 @@ export async function fetchPublicServices(): Promise<Service[]> {
   return data.map(parseService)
 }
 
+export type PublicDataStatus = 'loading' | 'ready' | 'error'
+
+export interface PublicDataState {
+  status: PublicDataStatus
+  business: Business | null
+  services: Service[]
+  error: string | null
+}
+
+let state: PublicDataState = {
+  status: 'loading',
+  business: null,
+  services: [],
+  error: null,
+}
+
+const listeners = new Set<() => void>()
+
+function publish(next: PublicDataState): void {
+  state = next
+  for (const listener of listeners) listener()
+}
+
+export function subscribePublicData(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
+}
+
+export function getPublicDataState(): PublicDataState {
+  return state
+}
+
 export interface PublicDataLoadResult {
   business: boolean
   services: boolean
 }
 
 /**
- * Loads public configuration from the Worker and applies it to the local UI
- * store. Other booking operations are still mock-backed until the later API
- * phases. If the Worker is not running, the existing demo data stays visible
- * so the UI remains reviewable offline.
+ * Loads the business settings and active services every public page depends on.
+ * There is no offline demo fallback: if the Worker cannot answer, the UI says so
+ * instead of showing sample values that would hide a broken deployment.
  */
 export async function hydratePublicData(): Promise<PublicDataLoadResult> {
   const [businessResult, servicesResult] = await Promise.allSettled([
@@ -141,26 +173,33 @@ export async function hydratePublicData(): Promise<PublicDataLoadResult> {
     fetchPublicServices(),
   ])
 
-  if (businessResult.status === 'fulfilled') {
-    applyPublicBusiness(businessResult.value)
-  } else {
-    console.warn(
-      '[slotly] Public business settings could not be loaded; using demo values.',
-      businessResult.reason,
-    )
+  const business = businessResult.status === 'fulfilled' ? businessResult.value : null
+  const services = servicesResult.status === 'fulfilled' ? servicesResult.value : []
+
+  if (!business) {
+    publish({
+      status: 'error',
+      business: null,
+      services,
+      error:
+        businessResult.status === 'rejected'
+          ? errorText(businessResult.reason)
+          : 'The business settings could not be loaded.',
+    })
+    return { business: false, services: servicesResult.status === 'fulfilled' }
   }
 
-  if (servicesResult.status === 'fulfilled') {
-    applyPublicServices(servicesResult.value)
-  } else {
-    console.warn(
-      '[slotly] Public services could not be loaded; using demo values.',
-      servicesResult.reason,
-    )
-  }
+  publish({
+    status: 'ready',
+    business,
+    services,
+    error: null,
+  })
 
-  return {
-    business: businessResult.status === 'fulfilled',
-    services: servicesResult.status === 'fulfilled',
-  }
+  return { business: true, services: servicesResult.status === 'fulfilled' }
+}
+
+function errorText(cause: unknown): string {
+  if (cause instanceof Error && cause.message) return cause.message
+  return 'The business settings could not be loaded.'
 }

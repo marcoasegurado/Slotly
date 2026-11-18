@@ -1,36 +1,11 @@
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { logout } from '../mock/api'
-import { resetDb } from '../mock/store'
-import { useMockDb, useSession } from '../lib/hooks'
+import { signOut } from '../lib/session'
+import { useBusiness, useSession } from '../lib/hooks'
 import { Button } from './Button'
 
-export function DemoBanner() {
-  return (
-    <div className="demo-banner" role="status">
-      <div className="container demo-banner__inner">
-        <strong>Demo mode</strong>
-        <span>
-          Sample data only. Nothing is saved and everything resets when you
-          reload.
-        </span>
-        <button
-          type="button"
-          className="btn btn--sm btn--ghost"
-          style={{ marginLeft: 'auto', color: 'inherit' }}
-          onClick={() => {
-            resetDb()
-            window.location.assign('/')
-          }}
-        >
-          Reset demo data
-        </button>
-      </div>
-    </div>
-  )
-}
 
 export function SiteHeader() {
-  const db = useMockDb()
+  const business = useBusiness()
   const session = useSession()
   const navigate = useNavigate()
 
@@ -38,13 +13,15 @@ export function SiteHeader() {
     <header className="site-header">
       <div className="container site-header__inner">
         <Link to="/" className="brand">
-          {db.business.businessName}
+          {business.businessName}
           <span className="brand__meta">Appointments</span>
         </Link>
 
         <nav className="site-nav" aria-label="Main">
           {session?.role === 'staff' ? (
             <NavLink to="/staff">Staff workspace</NavLink>
+          ) : session?.role === 'admin' ? (
+            <NavLink to="/admin">Admin workspace</NavLink>
           ) : (
             <>
               <NavLink to="/book" end={false}>
@@ -62,7 +39,7 @@ export function SiteHeader() {
                 variant="secondary"
                 size="sm"
                 onClick={() => {
-                  void logout().then(() => navigate('/'))
+                  void signOut().then(() => navigate('/'))
                 }}
               >
                 Sign out
@@ -78,16 +55,16 @@ export function SiteHeader() {
 }
 
 export function SiteFooter() {
-  const db = useMockDb()
+  const business = useBusiness()
   return (
     <footer className="site-footer">
       <div className="container site-footer__inner">
         <span>
-          {db.business.businessName}
-          {db.business.businessEmail ? ` · ${db.business.businessEmail}` : ''}
+          {business.businessName}
+          {business.businessEmail ? ` · ${business.businessEmail}` : ''}
         </span>
         <span className="mono">
-          Times shown in {db.business.timezone.replace('_', ' ')} · Payment at
+          Times shown in {business.timezone.replace('_', ' ')} · Payment at
           the business location
         </span>
       </div>
@@ -98,7 +75,6 @@ export function SiteFooter() {
 export function AppLayout() {
   return (
     <div className="page">
-      <DemoBanner />
       <SiteHeader />
       <main className="main">
         <Outlet />

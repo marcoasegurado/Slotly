@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { cancelGuestBooking, resolveGuestToken } from '../mock/api'
-import { useAsync, useDocumentTitle, useMockDb } from '../lib/hooks'
+import {
+  ApiError,
+  cancelGuestBooking,
+  resolveGuestCancellation,
+} from '../lib/api'
+import { useAsync, useDocumentTitle, useBusiness } from '../lib/hooks'
 import {
   formatDateKey,
   formatDuration,
@@ -12,6 +16,10 @@ import { Button, buttonClassName } from '../components/Button'
 import { Card } from '../components/Card'
 import { StateBlock } from '../components/StateBlock'
 
+function isoOf(seconds: number): string {
+  return new Date(seconds * 1000).toISOString()
+}
+
 /**
  * Guest cancellation.
  *
@@ -19,11 +27,11 @@ import { StateBlock } from '../components/StateBlock'
  * - shows no navigation or personal data beyond the booking being cancelled
  * - loads no third-party resources
  * - gives the same generic response for invalid, used, expired or stale links
- * - requires an explicit POST-equivalent action; the review step never mutates
+ * - requires an explicit POST-equivalent action; loading the page only reads
  */
 export function GuestCancelPage() {
   const { token = '' } = useParams()
-  const db = useMockDb()
+  const business = useBusiness()
 
   useDocumentTitle('Manage your request')
 
@@ -43,23 +51,26 @@ export function GuestCancelPage() {
     }
   }, [])
 
-  const resolution = useAsync(() => resolveGuestToken(token), [token])
+  const resolution = useAsync(() => resolveGuestCancellation(token), [token])
   const [cancelledReference, setCancelledReference] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const appointment = resolution.data?.appointment ?? null
-  const businessDateKey =
-    appointment !== null
-      ? toDateKey(new Date(appointment.startAt), db.business.timezone)
-      : null
+  const appointment = resolution.data
+  const timezone = business.timezone
+  const businessDateKey = appointment
+    ? toDateKey(new Date(appointment.startAt * 1000), timezone)
+    : null
+  const unavailable =
+    resolution.error instanceof ApiError &&
+    resolution.error.code === 'CANCELLATION_LINK_UNAVAILABLE'
 
   return (
     <div className="page">
       <header className="site-header">
         <div className="container site-header__inner">
           <span className="brand">
-            {db.business.businessName}
+            {business.businessName}
             <span className="brand__meta">Private link</span>
           </span>
         </div>
@@ -67,7 +78,7 @@ export function GuestCancelPage() {
 
       <main className="main">
         <div className="container main--narrow">
-          {resolution.loading && !resolution.data ? (
+          {resolution.loading && !appointment ? (
             <Card>
               <div className="skeleton-row">
                 <div className="skeleton" style={{ width: '40%' }} />
@@ -91,7 +102,7 @@ export function GuestCancelPage() {
                 receive further updates about this request.
               </StateBlock>
             </Card>
-          ) : resolution.data?.state === 'valid' && appointment && businessDateKey ? (
+          ) : appointment && businessDateKey ? (
             <div className="stack stack--loose">
               <div className="stack stack--tight">
                 <span className="eyebrow">Cancel a request</span>
@@ -106,11 +117,11 @@ export function GuestCancelPage() {
                 <dl className="summary__list" style={{ margin: 0 }}>
                   <div className="summary__row">
                     <dt>Service</dt>
-                    <dd>{appointment.serviceNameSnapshot}</dd>
+                    <dd>{appointment.serviceName}</dd>
                   </div>
                   <div className="summary__row">
                     <dt>Duration</dt>
-                    <dd className="mono">{formatDuration(appointment.durationMinutesSnapshot)}</dd>
+                    <dd className="mono">{formatDuration(appointment.durationMinutes)}</dd>
                   </div>
                   <div className="summary__row">
                     <dt>Date</dt>
@@ -119,7 +130,11 @@ export function GuestCancelPage() {
                   <div className="summary__row">
                     <dt>Time</dt>
                     <dd className="mono">
-                      {formatTimeRange(appointment.startAt, appointment.endAt, db.business.timezone)}
+                      {formatTimeRange(
+                        isoOf(appointment.startAt),
+                        isoOf(appointment.endAt),
+                        timezone,
+                      )}
                     </dd>
                   </div>
                   <div className="summary__row">
@@ -146,7 +161,7 @@ export function GuestCancelPage() {
                     setBusy(true)
                     setError(null)
                     void cancelGuestBooking(token)
-                      .then((result) => setCancelledReference(result.reference))
+                      .then((result) => setCancelledReference(result.publicReference))
                       .catch(() => {
                         // A failed token is indistinguishable from an unknown one.
                         setError('This link is no longer available.')
@@ -177,9 +192,9 @@ export function GuestCancelPage() {
                   </Link>
                 }
               >
-                The link may have been used already, expired, or the booking may
-                have been updated. If you still need to change something, contact
-                the business directly.
+                {unavailable
+                  ? 'The link may have been used already, expired, or the booking may have been updated. If you still need to change something, contact the business directly.'
+                  : 'We could not check this link just now. Reload the page or contact the business directly.'}
               </StateBlock>
             </Card>
           )}
@@ -189,7 +204,9 @@ export function GuestCancelPage() {
       <footer className="site-footer">
         <div className="container site-footer__inner">
           <span>Private link · do not share</span>
-          <span className="mono">{db.business.businessEmail ?? ''}</span>
+          <span className="mono">
+            {business.businessEmail ?? 'Times shown in business time'}
+          </span>
         </div>
       </footer>
     </div>

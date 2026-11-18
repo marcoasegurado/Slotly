@@ -1,4 +1,4 @@
-import type { AppointmentStatus } from '../mock/types'
+import type { AppointmentStatus } from '../lib/api'
 
 const LABELS: Record<AppointmentStatus, string> = {
   pending: 'Pending',

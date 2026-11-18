@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { cancelMyBooking, listMyBookings } from '../mock/api'
-import { errorMessage, useAsync, useDocumentTitle, useMockDb, useSession } from '../lib/hooks'
-import type { Appointment } from '../mock/types'
+import { cancelMyBooking, listMyBookings, type Booking } from '../lib/api'
+import { errorMessage, useAsync, useDocumentTitle, useBusiness, useSession } from '../lib/hooks'
 import { BookingCard } from '../components/BookingCard'
 import { Card, CardHeader } from '../components/Card'
 import { StateBlock } from '../components/StateBlock'
@@ -11,7 +10,7 @@ import { Dialog } from '../components/Dialog'
 
 export function MyAppointmentsPage() {
   useDocumentTitle('My appointments')
-  const db = useMockDb()
+  const business = useBusiness()
   const session = useSession()
 
   const isCustomer = session?.role === 'customer'
@@ -19,11 +18,11 @@ export function MyAppointmentsPage() {
     () =>
       isCustomer
         ? listMyBookings()
-        : Promise.resolve({ upcoming: [] as Appointment[], past: [] as Appointment[] }),
+        : Promise.resolve({ upcoming: [] as Booking[], past: [] as Booking[] }),
     [isCustomer, session?.id],
   )
 
-  const [pendingCancel, setPendingCancel] = useState<Appointment | null>(null)
+  const [pendingCancel, setPendingCancel] = useState<Booking | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -62,8 +61,11 @@ export function MyAppointmentsPage() {
             title="Customer appointments live in a customer account"
             actions={
               <>
-                <Link className={buttonClassName('primary')} to="/staff">
-                  Open the staff workspace
+                <Link
+                  className={buttonClassName('primary')}
+                  to={session.role === 'admin' ? '/admin' : '/staff'}
+                >
+                  Open the {session.role === 'admin' ? 'admin' : 'staff'} workspace
                 </Link>
                 <Link className={buttonClassName('secondary')} to="/">
                   Back to the public site
@@ -71,9 +73,9 @@ export function MyAppointmentsPage() {
               </>
             }
           >
-            You are signed in as a staff member. Staff accounts cannot book or
-            manage customer appointments. Sign out first, then sign in with a
-            customer account or book as a guest.
+            You are signed in as a {session.role} account. Workspace accounts
+            cannot book or manage customer appointments. Sign out first, then sign
+            in with a customer account or book as a guest.
           </StateBlock>
         </Card>
       </div>
@@ -158,9 +160,9 @@ export function MyAppointmentsPage() {
                 <ul className="stack" style={{ padding: '0 var(--space-4) var(--space-4)' }}>
                   {data.upcoming.map((appointment) => (
                     <BookingCard
-                      key={appointment.id}
+                      key={appointment.publicReference}
                       appointment={appointment}
-                      timezone={db.business.timezone}
+                      timezone={business.timezone}
                       onCancel={(target) => {
                         setActionError(null)
                         setPendingCancel(target)
@@ -186,9 +188,9 @@ export function MyAppointmentsPage() {
                 <ul className="stack" style={{ padding: '0 var(--space-4) var(--space-4)' }}>
                   {data.past.map((appointment) => (
                     <BookingCard
-                      key={appointment.id}
+                      key={appointment.publicReference}
                       appointment={appointment}
-                      timezone={db.business.timezone}
+                      timezone={business.timezone}
                     />
                   ))}
                 </ul>
@@ -217,7 +219,7 @@ export function MyAppointmentsPage() {
               onClick={() => {
                 if (!pendingCancel) return
                 setBusy(true)
-                void cancelMyBooking(pendingCancel.id)
+                void cancelMyBooking(pendingCancel.publicReference)
                   .then(() => {
                     setPendingCancel(null)
                     bookings.reload()
@@ -236,7 +238,7 @@ export function MyAppointmentsPage() {
       >
         {pendingCancel ? (
           <span>
-            {pendingCancel.serviceNameSnapshot} · {pendingCancel.publicReference}
+            {pendingCancel.serviceName} · {pendingCancel.publicReference}
             <br />
             The team will be notified. This cannot be undone, but you can send a
             new request afterwards.

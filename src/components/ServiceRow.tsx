@@ -1,4 +1,4 @@
-import type { Service } from '../mock/types'
+import type { Service } from '../lib/api'
 import { formatDuration } from '../lib/time'
 
 interface ServiceRowProps {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
-import { getAppointment } from '../mock/api'
-import { useAsync, useDocumentTitle, useMockDb, useSession } from '../lib/hooks'
+import { getMyBooking, type Booking } from '../lib/api'
+import { useAsync, useDocumentTitle, useBusiness, useSession } from '../lib/hooks'
 import {
   formatDateKey,
   formatDuration,
@@ -12,6 +12,10 @@ import { Button, buttonClassName } from '../components/Button'
 import { Card, CardHeader } from '../components/Card'
 import { StateBlock } from '../components/StateBlock'
 import { StatusTag } from '../components/StatusTag'
+
+function isoOf(seconds: number): string {
+  return new Date(seconds * 1000).toISOString()
+}
 
 function CopyButton({ value, label }: { value: string; label: string }) {
   const [copied, setCopied] = useState(false)
@@ -38,19 +42,39 @@ function CopyButton({ value, label }: { value: string; label: string }) {
   )
 }
 
+interface RequestState {
+  cancellationToken?: string | null
+  appointment?: Booking
+}
+
 export function RequestReceivedPage() {
   useDocumentTitle('Request received')
   const { reference = '' } = useParams()
   const location = useLocation()
-  const db = useMockDb()
+  const business = useBusiness()
   const session = useSession()
 
-  const cancellationToken =
-    (location.state as { cancellationToken?: string | null } | null)?.cancellationToken ?? null
+  const state = (location.state as RequestState | null) ?? null
+  const cancellationToken = state?.cancellationToken ?? null
+  const navigateState = state?.appointment
 
-  const appointment = useAsync(() => getAppointment(reference), [reference])
+  // The booking is passed from the form. A signed-in customer can also reload
+  // this page; guests rely on the email because the token is not stored here.
+  const fetched = useAsync<Booking | null>(async () => {
+    if (navigateState) return navigateState
+    if (session?.role === 'customer') {
+      try {
+        return await getMyBooking(reference)
+      } catch {
+        return null
+      }
+    }
+    return null
+  }, [reference, navigateState, session?.role])
 
-  if (appointment.loading && !appointment.data) {
+  const record: Booking | null = navigateState ?? fetched.data
+
+  if (fetched.loading && !record) {
     return (
       <div className="container main--narrow">
         <Card>
@@ -64,7 +88,7 @@ export function RequestReceivedPage() {
     )
   }
 
-  if (appointment.error || !appointment.data) {
+  if (!record) {
     return (
       <div className="container main--narrow">
         <Card>
@@ -72,25 +96,31 @@ export function RequestReceivedPage() {
             icon="?"
             title="We could not find that request"
             actions={
-              <Link className={buttonClassName('primary')} to="/book">
-                Book an appointment
-              </Link>
+              <>
+                <Link className={buttonClassName('primary')} to="/book">
+                  Book an appointment
+                </Link>
+                <Link className={buttonClassName('secondary')} to="/signin">
+                  Sign in
+                </Link>
+              </>
             }
           >
-            This page shows a request made in the current demo session. Reloading
-            the demo clears it. Check your email for the confirmation details.
+            Guest requests can only be reopened from the email we sent. Sign in
+            with the account that made the booking to see it here.
           </StateBlock>
         </Card>
       </div>
     )
   }
 
-  const record = appointment.data
-  const businessDateKey = toDateKey(new Date(record.startAt), db.business.timezone)
+  const timezone = business.timezone
+  const businessDateKey = toDateKey(new Date(record.startAt * 1000), timezone)
   const cancellationPath = cancellationToken ? `/cancel/${cancellationToken}` : null
   const cancellationUrl = cancellationPath
     ? `${window.location.origin}${cancellationPath}`
     : null
+  const isCustomerBooking = record.guestName === null
 
   return (
     <div className="container main--narrow">
@@ -101,7 +131,7 @@ export function RequestReceivedPage() {
           </span>
           <h1 style={{ fontSize: '2rem' }}>Request received</h1>
           <p className="lede">
-            Your request is with {db.business.businessName}. Nothing is confirmed
+            Your request is with {business.businessName}. Nothing is confirmed
             yet — the team will review it and email you at the address you gave.
           </p>
         </div>
@@ -123,11 +153,11 @@ export function RequestReceivedPage() {
           <dl className="summary__list" style={{ margin: 0 }}>
             <div className="summary__row">
               <dt>Service</dt>
-              <dd>{record.serviceNameSnapshot}</dd>
+              <dd>{record.serviceName}</dd>
             </div>
             <div className="summary__row">
               <dt>Duration</dt>
-              <dd className="mono">{formatDuration(record.durationMinutesSnapshot)}</dd>
+              <dd className="mono">{formatDuration(record.durationMinutes)}</dd>
             </div>
             <div className="summary__row">
               <dt>Date</dt>
@@ -136,22 +166,24 @@ export function RequestReceivedPage() {
             <div className="summary__row">
               <dt>Time</dt>
               <dd className="mono">
-                {formatTimeRange(record.startAt, record.endAt, db.business.timezone)}
+                {formatTimeRange(isoOf(record.startAt), isoOf(record.endAt), timezone)}
               </dd>
             </div>
             <div className="summary__row">
               <dt>Name</dt>
               <dd>
-                {record.customerUserId
-                  ? session?.role === 'customer'
-                    ? session.name
-                    : 'Account holder'
+                {isCustomerBooking
+                  ? (session?.role === 'customer' ? session.name : 'Account holder')
                   : record.guestName}
               </dd>
             </div>
             <div className="summary__row">
               <dt>Email</dt>
-              <dd>{record.guestEmail}</dd>
+              <dd>
+                {isCustomerBooking
+                  ? (session?.role === 'customer' ? session.email : '—')
+                  : record.guestEmail}
+              </dd>
             </div>
             {record.customerNote ? (
               <div className="summary__row">
@@ -169,7 +201,8 @@ export function RequestReceivedPage() {
               <p className="text-sm secondary">
                 Keep this link to yourself. It can cancel this pending request
                 and nothing else. It stops working once the booking is confirmed
-                or the appointment time passes.
+                or the appointment time passes. Save or bookmark it now — it is
+                shown only once.
               </p>
               <code className="token-link">{cancellationUrl}</code>
               <div className="row row--wrap">
@@ -186,7 +219,10 @@ export function RequestReceivedPage() {
               <div className="notice__title">This link is shown once</div>
               <p>
                 The private cancellation link was included in the request email
-                and is not stored on this page. {session?.role === 'customer' ? 'You can also cancel a pending request from your appointments.' : 'Keep the email if you may need to cancel.'}
+                and is not stored on this page.{' '}
+                {session?.role === 'customer'
+                  ? 'You can also cancel a pending request from your appointments.'
+                  : 'Keep the email if you may need to cancel.'}
               </p>
             </div>
           </div>

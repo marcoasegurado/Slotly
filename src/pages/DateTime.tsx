@@ -1,27 +1,30 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  findNextAvailableDates,
-  getDayAvailability,
-} from '../lib/availability'
+  getAvailability,
+  getMonthAvailability,
+  listServices,
+  type AvailabilitySlot,
+  type AvailabilityState,
+  type DayAvailability,
+  type Service,
+} from '../lib/api'
+import { useAsync, useDocumentTitle, useBusiness } from '../lib/hooks'
 import {
   addDaysToDateKey,
   addMonths,
-  daysInMonth,
   firstOfMonthDateKey,
   formatDateKey,
   formatDuration,
   formatTime,
   minutesOfDay,
-  parseDateKey,
   todayDateKey,
 } from '../lib/time'
-import { useDocumentTitle, useMockDb } from '../lib/hooks'
-import type { DayAvailabilityState, Slot } from '../mock/types'
 import { Calendar } from '../components/Calendar'
 import { Stepper } from '../components/Stepper'
 import { Button, buttonClassName } from '../components/Button'
 import { Card, CardHeader } from '../components/Card'
+import { StateBlock } from '../components/StateBlock'
 
 const PERIODS = [
   { key: 'morning', label: 'Morning', from: 0, to: 12 * 60 },
@@ -29,72 +32,121 @@ const PERIODS = [
   { key: 'evening', label: 'Evening', from: 17 * 60, to: 24 * 60 },
 ] as const
 
+function isoOf(seconds: number): string {
+  return new Date(seconds * 1000).toISOString()
+}
+
+const MAX_AUTO_ADVANCE_MONTHS = 3
+
 export function DateTimePage() {
   const { serviceId = '' } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
-  const db = useMockDb()
+  const business = useBusiness()
+  const timezone = business.timezone
 
-  const service = db.services.find((entry) => entry.id === serviceId && entry.isActive) ?? null
-
-  useDocumentTitle(service ? `${service.name} — choose a time` : 'Choose a time')
-
-  const todayKey = todayDateKey(db.business.timezone)
+  const todayKey = todayDateKey(timezone)
   const requestedDateKey = searchParams.get('date')
   const selectedDateKey = requestedDateKey ?? todayKey
 
-  const [monthStart, setMonthStart] = useState(() => firstOfMonthDateKey(selectedDateKey))
-  const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null)
-
-  const now = useMemo(() => new Date(), [db, selectedDateKey])
-
-  const context = useMemo(
-    () => ({ business: db.business, staff: db.staff, appointments: db.appointments }),
-    [db],
+  const [monthStart, setMonthStart] = useState(() =>
+    firstOfMonthDateKey(selectedDateKey),
   )
+  const [selectedSlot, setSelectedSlot] = useState<AvailabilitySlot | null>(null)
 
-  const dayAvailability = useMemo(
-    () => (service ? getDayAvailability(context, service, selectedDateKey, now) : null),
-    [context, service, selectedDateKey, now],
+  const services = useAsync(() => listServices(), [])
+  const service: Service | null =
+    (services.data ?? []).find((entry) => entry.id === serviceId && entry.isActive) ??
+    null
+
+  useDocumentTitle(service ? `${service.name} — choose a time` : 'Choose a time')
+
+  const monthKey = monthStart.slice(0, 7)
+  const month = useAsync(
+    () => getMonthAvailability(serviceId, monthKey),
+    [serviceId, monthKey],
+  )
+  const day = useAsync(
+    () => getAvailability(serviceId, selectedDateKey),
+    [serviceId, selectedDateKey],
   )
 
   const dayStates = useMemo(() => {
-    const states = new Map<string, DayAvailabilityState>()
-    if (!service) return states
-    const { year, month } = parseDateKey(monthStart)
-    const total = daysInMonth(year, month)
-    for (let index = 0; index < total; index += 1) {
-      const dateKey = addDaysToDateKey(monthStart, index)
-      states.set(dateKey, getDayAvailability(context, service, dateKey, now).state)
+    const states = new Map<string, AvailabilityState>()
+    for (const entry of month.data?.days ?? []) {
+      states.set(entry.dateKey, entry.state)
     }
     return states
-  }, [context, service, monthStart, now])
+  }, [month.data])
 
-  const nextDates = useMemo(
-    () => (service ? findNextAvailableDates(context, service, selectedDateKey, 4, now) : []),
-    [context, service, selectedDateKey, now],
-  )
+  const nextDates = useMemo(() => {
+    return (month.data?.days ?? [])
+      .filter((entry) => entry.dateKey > selectedDateKey && entry.state === 'open')
+      .slice(0, 4)
+      .map((entry) => entry.dateKey)
+  }, [month.data, selectedDateKey])
 
-  // Open on the first date that can actually be booked, so the page never
-  // greets a visitor with an empty state on a fully booked day.
-  const didAutoAdvance = useRef(false)
+  // Open on the first bookable date instead of an empty "today" when the
+  // business is closed today or the day is full.
+  const autoAdvance = useRef({ done: false, months: 0 })
   useEffect(() => {
-    if (!service || didAutoAdvance.current) return
-    if (requestedDateKey) {
-      didAutoAdvance.current = true
+    if (autoAdvance.current.done || requestedDateKey) {
+      autoAdvance.current.done = true
       return
     }
-    if (dayAvailability && dayAvailability.state !== 'open' && nextDates.length > 0) {
-      didAutoAdvance.current = true
-      setSearchParams({ date: nextDates[0] }, { replace: true })
-    } else if (dayAvailability && dayAvailability.state === 'open') {
-      didAutoAdvance.current = true
+    const days = month.data?.days
+    if (!days) return
+
+    const open = days.find(
+      (entry) => entry.dateKey >= todayKey && entry.state === 'open',
+    )
+    if (open) {
+      autoAdvance.current.done = true
+      if (open.dateKey !== selectedDateKey) {
+        setSearchParams({ date: open.dateKey }, { replace: true })
+      }
+      return
     }
-  }, [dayAvailability, nextDates, requestedDateKey, service, setSearchParams])
+
+    if (autoAdvance.current.months < MAX_AUTO_ADVANCE_MONTHS) {
+      autoAdvance.current.months += 1
+      setMonthStart((current) => addMonths(current, 1))
+    } else {
+      autoAdvance.current.done = true
+    }
+  }, [month.data, requestedDateKey, selectedDateKey, setSearchParams, todayKey])
 
   useEffect(() => {
     setSelectedSlot(null)
   }, [selectedDateKey])
+
+  if (services.loading && !services.data) {
+    return (
+      <div className="container main--narrow">
+        <p className="meta">Loading times…</p>
+      </div>
+    )
+  }
+
+  if (services.error) {
+    return (
+      <div className="container main--narrow">
+        <Card>
+          <StateBlock
+            icon="!"
+            title="We could not load this service"
+            actions={
+              <Button variant="secondary" size="sm" onClick={services.reload}>
+                Try again
+              </Button>
+            }
+          >
+            {services.error.message}
+          </StateBlock>
+        </Card>
+      </div>
+    )
+  }
 
   if (!service) {
     return (
@@ -118,7 +170,10 @@ export function DateTimePage() {
   }
 
   const firstOfThisMonth = firstOfMonthDateKey(todayKey)
-  const lastBookableDateKey = addDaysToDateKey(todayKey, db.business.maxAdvanceBookingDays)
+  const lastBookableDateKey = addDaysToDateKey(
+    todayKey,
+    business.maxAdvanceBookingDays,
+  )
   const firstOfLastMonth = firstOfMonthDateKey(lastBookableDateKey)
   const canGoPrevious = monthStart > firstOfThisMonth
   const canGoNext = monthStart < firstOfLastMonth
@@ -128,8 +183,10 @@ export function DateTimePage() {
     setSearchParams({ date: dateKey })
   }
 
-  const slots = dayAvailability?.slots ?? []
+  const availability: DayAvailability | null = day.data
+  const slots = availability?.slots ?? []
   const selectedDateLabel = formatDateKey(selectedDateKey)
+  const dayError = day.error
 
   return (
     <div className="container">
@@ -167,11 +224,25 @@ export function DateTimePage() {
               }
             />
 
-            {dayAvailability && dayAvailability.state === 'open' ? (
+            {day.loading && !availability ? (
+              <p className="meta">Checking that date…</p>
+            ) : dayError ? (
+              <StateBlock
+                icon="!"
+                title="We could not load those times"
+                actions={
+                  <Button variant="secondary" size="sm" onClick={day.reload}>
+                    Try again
+                  </Button>
+                }
+              >
+                {dayError.message}
+              </StateBlock>
+            ) : availability && availability.state === 'open' ? (
               <div id="slot-groups" className="stack stack--loose">
                 {PERIODS.map((period) => {
                   const periodSlots = slots.filter((slot) => {
-                    const minute = minutesOfDay(new Date(slot.startAt), db.business.timezone)
+                    const minute = minutesOfDay(new Date(isoOf(slot.startAt)), timezone)
                     return minute >= period.from && minute < period.to
                   })
                   if (periodSlots.length === 0) return null
@@ -189,7 +260,7 @@ export function DateTimePage() {
                               aria-pressed={isSelected}
                               onClick={() => setSelectedSlot(slot)}
                             >
-                              {formatTime(slot.startAt, db.business.timezone)}
+                              {formatTime(isoOf(slot.startAt), timezone)}
                             </button>
                           )
                         })}
@@ -202,21 +273,21 @@ export function DateTimePage() {
               <div className="stack">
                 <div className="state">
                   <span className="state__icon" aria-hidden="true">
-                    {dayAvailability?.state === 'closed' ? '–' : '0'}
+                    {availability?.state === 'closed' ? '–' : '0'}
                   </span>
                   <div className="stack stack--tight">
                     <p className="state__title">
-                      {dayAvailability?.state === 'closed'
+                      {availability?.state === 'closed'
                         ? 'Closed on this day'
-                        : dayAvailability?.state === 'outside-booking-window'
+                        : availability?.state === 'outside-booking-window'
                           ? 'Too far ahead to book'
                           : 'No times left on this date'}
                     </p>
                     <p className="secondary text-sm">
-                      {dayAvailability?.state === 'closed'
+                      {availability?.state === 'closed'
                         ? 'Nobody is scheduled to work on this weekday. Pick another date.'
-                        : dayAvailability?.state === 'outside-booking-window'
-                          ? `Bookings open ${db.business.maxAdvanceBookingDays} days ahead. Choose a nearer date.`
+                        : availability?.state === 'outside-booking-window'
+                          ? `Bookings open ${business.maxAdvanceBookingDays} days ahead. Choose a nearer date.`
                           : 'Every remaining time is either taken or already in the past. The nearest alternatives are below.'}
                     </p>
                   </div>
@@ -240,9 +311,9 @@ export function DateTimePage() {
                   </div>
                 ) : (
                   <p className="text-sm secondary">
-                    There are no bookable dates in the current window.
-                    {db.business.businessEmail
-                      ? ` Contact the business at ${db.business.businessEmail}.`
+                    There are no bookable dates in this month.
+                    {business.businessEmail
+                      ? ` Contact the business at ${business.businessEmail}.`
                       : ' Contact the business directly.'}
                   </p>
                 )}
@@ -271,7 +342,7 @@ export function DateTimePage() {
                 <dt>Time</dt>
                 <dd className="mono">
                   {selectedSlot
-                    ? formatTime(selectedSlot.startAt, db.business.timezone)
+                    ? formatTime(isoOf(selectedSlot.startAt), timezone)
                     : 'Not chosen'}
                 </dd>
               </div>
@@ -290,7 +361,7 @@ export function DateTimePage() {
                 onClick={() => {
                   if (!selectedSlot) return
                   navigate(
-                    `/book/${service.id}/details?start=${encodeURIComponent(selectedSlot.startAt)}`,
+                    `/book/${service.id}/details?start=${selectedSlot.startAt}`,
                   )
                 }}
               >

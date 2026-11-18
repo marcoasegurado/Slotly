@@ -2,6 +2,7 @@ import { useId } from 'react'
 import type {
   InputHTMLAttributes,
   ReactNode,
+  SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from 'react'
 
@@ -120,6 +121,50 @@ export function TextAreaField({
           aria-describedby={describedBy}
           {...rest}
         />
+      )}
+    </FieldShell>
+  )
+}
+
+interface SelectFieldProps
+  extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'id'> {
+  label: string
+  hint?: string
+  error?: string
+  fieldId?: string
+}
+
+export function SelectField({
+  label,
+  hint,
+  error,
+  fieldId,
+  required,
+  children,
+  ...rest
+}: SelectFieldProps) {
+  const generated = useId()
+  const id = fieldId ?? `field-${generated}`
+
+  return (
+    <FieldShell
+      id={id}
+      label={label}
+      hint={hint}
+      error={error}
+      required={required}
+    >
+      {(describedBy) => (
+        <select
+          className="input"
+          id={id}
+          required={required}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={describedBy}
+          {...rest}
+        >
+          {children}
+        </select>
       )}
     </FieldShell>
   )

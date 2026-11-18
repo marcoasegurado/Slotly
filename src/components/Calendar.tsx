@@ -7,11 +7,11 @@ import {
   parseDateKey,
   weekdayOfDateKey,
 } from '../lib/time'
-import type { DayAvailabilityState } from '../mock/types'
+import type { AvailabilityState } from '../lib/api'
 
 const WEEKDAY_HEADERS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-const STATE_NOTE: Record<DayAvailabilityState, string> = {
+const STATE_NOTE: Record<AvailabilityState, string> = {
   open: 'available',
   closed: 'closed',
   full: 'fully booked',
@@ -24,7 +24,7 @@ interface CalendarProps {
   monthStart: string
   selectedDateKey: string
   todayKey: string
-  getDayState: (dateKey: string) => DayAvailabilityState
+  getDayState: (dateKey: string) => AvailabilityState
   onChangeMonth: (offset: number) => void
   onSelect: (dateKey: string) => void
   canGoPrevious: boolean

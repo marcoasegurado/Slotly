@@ -1,24 +1,33 @@
 import { Link } from 'react-router-dom'
-import type { Appointment } from '../mock/types'
+import type { ManagedAppointment } from '../lib/api'
 import { formatDateKeyShort, formatTime, toDateKey } from '../lib/time'
 import { StatusTag } from './StatusTag'
 import { buttonClassName } from './Button'
 
-interface StaffAppointmentRowProps {
-  appointment: Appointment
+interface ManagedAppointmentRowProps {
+  appointment: ManagedAppointment
   timezone: string
+  /** Workspace route that hosts the review screen, e.g. `/admin/appointments`. */
+  basePath: string
   showDate?: boolean
+  showStaff?: boolean
 }
 
-export function StaffAppointmentRow({
+export function ManagedAppointmentRow({
   appointment,
   timezone,
+  basePath,
   showDate = true,
-}: StaffAppointmentRowProps) {
-  const dateKey = toDateKey(new Date(appointment.startAt), timezone)
+  showStaff = false,
+}: ManagedAppointmentRowProps) {
+  const dateKey = toDateKey(new Date(appointment.startAt * 1000), timezone)
   const pastPending =
-    appointment.status === 'pending' && Date.parse(appointment.startAt) <= Date.now()
-  const customerName = appointment.guestName ?? appointment.guestEmail ?? 'Customer'
+    appointment.status === 'pending' && appointment.startAt * 1000 <= Date.now()
+  const customerName =
+    appointment.customer?.name ??
+    appointment.guestName ??
+    appointment.guestEmail ??
+    'Customer'
 
   return (
     <li className="staff-row">
@@ -27,22 +36,23 @@ export function StaffAppointmentRow({
           <span className="staff-row__day">{formatDateKeyShort(dateKey)}</span>
         ) : null}
         <span className="staff-row__time mono">
-          {formatTime(appointment.startAt, timezone)}
+          {formatTime(new Date(appointment.startAt * 1000).toISOString(), timezone)}
         </span>
       </div>
 
       <div className="staff-row__body">
         <div className="row row--wrap" style={{ gap: 'var(--space-2)' }}>
-          <span className="staff-row__title">{appointment.serviceNameSnapshot}</span>
+          <span className="staff-row__title">{appointment.serviceName}</span>
           <StatusTag status={appointment.status} />
         </div>
         <span className="staff-row__meta">
-          {customerName} · {appointment.durationMinutesSnapshot} min ·{' '}
+          {customerName} · {appointment.durationMinutes} min ·{' '}
           <span className="mono">{appointment.publicReference}</span>
+          {showStaff ? ` · ${appointment.assignedStaff.name}` : ''}
         </span>
         {pastPending ? (
           <span className="staff-row__flag">
-            Start time passed — this request cannot be approved.
+            Start time passed — approve is blocked. Reschedule or decline it.
           </span>
         ) : null}
       </div>
@@ -50,7 +60,7 @@ export function StaffAppointmentRow({
       <div className="staff-row__actions">
         <Link
           className={buttonClassName('secondary', 'btn--sm')}
-          to={`/staff/appointments/${appointment.id}`}
+          to={`${basePath}/${appointment.publicReference}`}
         >
           Review
         </Link>

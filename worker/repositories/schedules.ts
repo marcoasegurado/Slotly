@@ -383,4 +383,89 @@ export class SchedulesRepository {
       })),
     }
   }
+
+  async loadAvailabilitySpan(
+    spanStart: number,
+    spanEnd: number,
+  ): Promise<AvailabilityDayContext> {
+    const [staffResult, hoursResult, timeOffResult, appointmentResult] =
+      await Promise.all([
+        this.db
+          .prepare(
+            `SELECT u.id
+               FROM users u
+               JOIN staff_profiles p ON p.user_id = u.id
+              WHERE u.role = 'staff' AND u.is_active = 1
+              ORDER BY u.id ASC`,
+          )
+          .all<{ id: string }>(),
+        this.db
+          .prepare(
+            `SELECT h.staff_user_id, h.weekday, h.start_minute, h.end_minute
+               FROM staff_working_hours h
+               JOIN users u ON u.id = h.staff_user_id
+               JOIN staff_profiles p ON p.user_id = u.id
+              WHERE u.role = 'staff'
+                AND u.is_active = 1
+              ORDER BY h.staff_user_id ASC, h.weekday ASC, h.start_minute ASC`,
+          )
+          .all<StaffWorkingHourRow>(),
+        this.db
+          .prepare(
+            `SELECT t.staff_user_id, t.start_at, t.end_at
+               FROM staff_time_off t
+               JOIN users u ON u.id = t.staff_user_id
+               JOIN staff_profiles p ON p.user_id = u.id
+              WHERE u.role = 'staff'
+                AND u.is_active = 1
+                AND t.end_at > ?
+                AND t.start_at < ?
+              ORDER BY t.staff_user_id ASC, t.start_at ASC`,
+          )
+          .bind(spanStart, spanEnd)
+          .all<StaffTimeOffRow>(),
+        this.db
+          .prepare(
+            `SELECT a.assigned_staff_user_id, a.start_at, a.end_at
+               FROM appointments a
+               JOIN users u ON u.id = a.assigned_staff_user_id
+               JOIN staff_profiles p ON p.user_id = u.id
+              WHERE a.status = 'confirmed'
+                AND u.role = 'staff'
+                AND u.is_active = 1
+                AND a.end_at > ?
+                AND a.start_at < ?
+              ORDER BY a.start_at ASC, a.id ASC`,
+          )
+          .bind(spanStart, spanEnd)
+          .all<ConfirmedAppointmentRow>(),
+      ])
+
+    const staffById = new Map<string, AvailabilityStaff>()
+    for (const row of staffResult.results) {
+      staffById.set(row.id, { id: row.id, workingHours: [], timeOff: [] })
+    }
+    for (const row of hoursResult.results) {
+      staffById.get(row.staff_user_id)?.workingHours.push({
+        weekday: row.weekday,
+        startMinute: row.start_minute,
+        endMinute: row.end_minute,
+      })
+    }
+    for (const row of timeOffResult.results) {
+      staffById.get(row.staff_user_id)?.timeOff.push({
+        startAt: row.start_at,
+        endAt: row.end_at,
+      })
+    }
+
+    return {
+      staff: [...staffById.values()],
+      confirmedAppointments: appointmentResult.results.map((row) => ({
+        staffUserId: row.assigned_staff_user_id,
+        startAt: row.start_at,
+        endAt: row.end_at,
+      })),
+    }
+  }
 }

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { getDb, resetDb } from '../src/mock/store'
 import {
   fetchPublicBusiness,
   fetchPublicServices,
+  getPublicDataState,
   hydratePublicData,
   PublicApiError,
 } from '../src/lib/public-api'
@@ -32,7 +32,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 beforeEach(() => {
-  resetDb()
+  vi.resetModules()
 })
 
 afterEach(() => {
@@ -98,7 +98,7 @@ describe('public API client', () => {
     })
   })
 
-  it('hydrates the UI store when both endpoints succeed', async () => {
+  it('publishes the loaded settings to the UI store', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse({ data: business }))
@@ -110,22 +110,25 @@ describe('public API client', () => {
       services: true,
     })
 
-    expect(getDb().business).toEqual(business)
-    expect(getDb().services).toEqual(services)
+    const state = getPublicDataState()
+    expect(state.status).toBe('ready')
+    expect(state.business).toEqual(business)
+    expect(state.services).toEqual(services)
+    expect(state.error).toBeNull()
   })
 
-  it('keeps demo data visible when the Worker is unavailable', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    const fetchMock = vi.fn().mockRejectedValue(new Error('offline'))
-    vi.stubGlobal('fetch', fetchMock)
+  it('reports a failure instead of showing sample data', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
 
     await expect(hydratePublicData()).resolves.toEqual({
       business: false,
       services: false,
     })
 
-    expect(getDb().business.businessName).toBe('Slotly Studio')
-    expect(getDb().services.length).toBeGreaterThan(0)
-    expect(warn).toHaveBeenCalledTimes(2)
+    const state = getPublicDataState()
+    expect(state.status).toBe('error')
+    expect(state.business).toBeNull()
+    expect(state.services).toEqual([])
+    expect(state.error).toBe('offline')
   })
 })

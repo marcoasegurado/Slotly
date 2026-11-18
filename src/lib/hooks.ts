@@ -1,43 +1,40 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
-import { getDb, subscribe } from '../mock/store'
-import type { MockDatabase } from '../mock/seed'
-import type { SessionUser } from '../mock/api'
-import type { StaffMember } from '../mock/types'
+import type { AuthUser, Business } from './api'
+import {
+  getPublicDataState,
+  subscribePublicData,
+  type PublicDataState,
+} from './public-api'
+import { useSessionState } from './session'
 
-export function useMockDb(): MockDatabase {
-  return useSyncExternalStore(subscribe, getDb, getDb)
+/** Business settings and active services, loaded once at startup. */
+export function usePublicData(): PublicDataState {
+  return useSyncExternalStore(
+    subscribePublicData,
+    getPublicDataState,
+    getPublicDataState,
+  )
 }
 
-export function useSession(): SessionUser | null {
-  const db = useMockDb()
-  if (!db.session) return null
-
-  if (db.session.role === 'customer') {
-    const customer = db.customers.find((entry) => entry.id === db.session?.id)
-    if (!customer) return null
-    return {
-      id: customer.id,
-      name: customer.name,
-      email: customer.email,
-      role: 'customer',
-    }
+/**
+ * The business settings. `App` blocks rendering until they are loaded, so any
+ * page rendered below it can rely on this being present.
+ */
+export function useBusiness(): Business {
+  const data = usePublicData()
+  if (!data.business) {
+    throw new Error('Business settings were used before they finished loading.')
   }
-
-  const staff = db.staff.find((entry) => entry.id === db.session?.id)
-  if (!staff || !staff.isActive) return null
-  return {
-    id: staff.id,
-    name: staff.name,
-    email: staff.email,
-    role: db.session.role,
-  }
+  return data.business
 }
 
-export function useStaff(): StaffMember | null {
-  const db = useMockDb()
-  const session = useSession()
-  if (!session || session.role !== 'staff') return null
-  return db.staff.find((entry) => entry.id === session.id) ?? null
+/** The signed-in user, or null. Never a demo account. */
+export function useSession(): AuthUser | null {
+  return useSessionState().user
+}
+
+export function useSessionLoading(): boolean {
+  return useSessionState().status === 'loading'
 }
 
 export interface AsyncState<T> {

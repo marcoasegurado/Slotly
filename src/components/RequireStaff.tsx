@@ -18,6 +18,10 @@ export function RequireStaff({ children }: { children: ReactNode }) {
     return <Navigate to={`/signin?next=${next}`} replace />
   }
 
+  if (session.mustChangePassword) {
+    return <Navigate to="/change-password" replace />
+  }
+
   if (session.role !== 'staff') {
     return (
       <div className="container main--narrow" style={{ paddingBlock: 'var(--space-12)' }}>

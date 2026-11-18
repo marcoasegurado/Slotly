@@ -11,14 +11,16 @@ import {
   requiredInteger,
   requiredString,
 } from '../http/validation'
-import { isValidDateKey, unixSeconds } from '../lib/time'
+import { dateKeyUnixRange, isValidDateKey, pad2, unixSeconds } from '../lib/time'
 import { BusinessSettingsRepository } from '../repositories/business-settings'
+import { SchedulesRepository } from '../repositories/schedules'
 import { ServicesRepository } from '../repositories/services'
 import { getDayAvailability } from '../services/availability'
 import { loadAvailabilityContext } from '../services/availability-context'
 import {
   cancelGuestBooking,
   createBooking,
+  resolveGuestCancellation,
 } from '../services/bookings'
 import { dispatchEmailById } from '../services/notifications'
 
@@ -104,6 +106,73 @@ publicRoutes.get('/availability', async (c) => {
   })
 })
 
+publicRoutes.get('/availability/month', async (c) => {
+  const serviceId = c.req.query('serviceId')?.trim() ?? ''
+  const month = c.req.query('month')?.trim() ?? ''
+
+  if (!serviceId) {
+    throw new ApiError(422, 'VALIDATION_ERROR', 'Choose a service.')
+  }
+  if (!/^(\d{4})-(0[1-9]|1[0-2])$/.test(month)) {
+    throw new ApiError(422, 'VALIDATION_ERROR', 'Choose a valid month.')
+  }
+
+  const year = Number(month.slice(0, 4))
+  if (year < 2000 || year > 2100) {
+    throw new ApiError(422, 'VALIDATION_ERROR', 'Choose a valid month.')
+  }
+
+  const business = await new BusinessSettingsRepository(c.env.DB).getPublic()
+  if (!business) {
+    return apiError(
+      c,
+      404,
+      'BUSINESS_NOT_CONFIGURED',
+      'Business settings have not been configured.',
+    )
+  }
+
+  const service = await new ServicesRepository(c.env.DB).findActiveById(serviceId)
+  if (!service) {
+    return apiError(
+      c,
+      404,
+      'SERVICE_NOT_FOUND',
+      'That service is not available.',
+    )
+  }
+
+  const monthIndex = Number(month.slice(5, 7))
+  const lastDay = new Date(Date.UTC(year, monthIndex, 0)).getUTCDate()
+  const firstDateKey = `${month}-01`
+  const lastDateKey = `${month}-${pad2(lastDay)}`
+
+  // One span covers the whole month, so the calendar costs two queries instead
+  // of one per day.
+  const span = await new SchedulesRepository(c.env.DB).loadAvailabilitySpan(
+    dateKeyUnixRange(firstDateKey, business.timezone).start,
+    dateKeyUnixRange(lastDateKey, business.timezone).end,
+  )
+
+  const context = {
+    timezone: business.timezone,
+    maxAdvanceBookingDays: business.maxAdvanceBookingDays,
+    staff: span.staff,
+    confirmedAppointments: span.confirmedAppointments,
+  }
+
+  const days = []
+  for (let day = 1; day <= lastDay; day += 1) {
+    const dateKey = `${month}-${pad2(day)}`
+    days.push({
+      dateKey,
+      state: getDayAvailability(context, service.durationMinutes, dateKey).state,
+    })
+  }
+
+  return c.json({ data: { month, days } })
+})
+
 publicRoutes.post('/bookings', async (c) => {
   enforceRateLimit(
     c,
@@ -173,6 +242,26 @@ publicRoutes.post('/bookings', async (c) => {
   }
 
   return c.json({ data: outcome.result }, 201)
+})
+
+publicRoutes.get('/guest-cancellation/:token', async (c) => {
+  enforceRateLimit(
+    c,
+    `guest-cancel-lookup-ip:${clientIp(c)}`,
+    GUEST_CANCEL_RATE_LIMIT,
+    GUEST_CANCEL_RATE_WINDOW_MS,
+  )
+
+  const token = c.req.param('token') ?? ''
+  if (!token || token.length > 128) {
+    throw new ApiError(
+      404,
+      'CANCELLATION_LINK_UNAVAILABLE',
+      'This cancellation link is no longer available.',
+    )
+  }
+
+  return c.json({ data: await resolveGuestCancellation(c.env.DB, token) })
 })
 
 publicRoutes.post('/guest-cancellation', async (c) => {

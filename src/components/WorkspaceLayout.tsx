@@ -1,8 +1,7 @@
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { logout } from '../mock/api'
+import { signOut } from '../lib/session'
 import { useSession } from '../lib/hooks'
 import { Button } from './Button'
-import { DemoBanner } from './Layout'
 
 const NAV_ITEMS = [
   { to: '/staff', label: 'Dashboard', end: true },
@@ -42,7 +41,7 @@ export function WorkspaceLayout() {
             size="sm"
             className="workspace__signout"
             onClick={() => {
-              void logout().then(() => navigate('/'))
+              void signOut().then(() => navigate('/'))
             }}
           >
             Sign out
@@ -51,7 +50,6 @@ export function WorkspaceLayout() {
       </aside>
 
       <div className="workspace__main">
-        <DemoBanner />
         <header className="workspace__topbar">
           <div className="workspace__topbar-inner">
             <span className="eyebrow">Staff workspace</span>

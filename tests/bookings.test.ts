@@ -578,6 +578,80 @@ describe('POST /api/public/guest-cancellation', () => {
   })
 })
 
+describe('GET /api/public/guest-cancellation/:token', () => {
+  async function createGuestBooking(): Promise<{
+    publicReference: string
+    cancellationToken: string
+  }> {
+    const response = await request(db, '/api/public/bookings', {
+      body: {
+        serviceId: 'svc_consult',
+        startAt: at(nextDateKey([1, 2, 3, 4, 5]), 660),
+        guestName: 'Robin Guest',
+        guestEmail: 'robin@example.com',
+      },
+    })
+    expect(response.status).toBe(201)
+    const body = (await response.json()) as {
+      data: {
+        appointment: { publicReference: string }
+        cancellationToken: string
+      }
+    }
+    return {
+      publicReference: body.data.appointment.publicReference,
+      cancellationToken: body.data.cancellationToken,
+    }
+  }
+
+  it('returns a read-only summary and never mutates the booking', async () => {
+    const { publicReference, cancellationToken } = await createGuestBooking()
+
+    const response = await request(
+      db,
+      `/api/public/guest-cancellation/${cancellationToken}`,
+    )
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      data: {
+        publicReference: string
+        serviceName: string
+        startAt: number
+        endAt: number
+      }
+    }
+    expect(body.data.publicReference).toBe(publicReference)
+    expect(body.data.serviceName).toBe('Initial consultation')
+    expect(body.data.endAt).toBeGreaterThan(body.data.startAt)
+
+    const row = bookingRow(db, publicReference)
+    expect(row?.status).toBe('pending')
+  })
+
+  it('gives the same generic response for unknown and used links', async () => {
+    const unknown = await expectApiError(
+      await request(db, `/api/public/guest-cancellation/${'a'.repeat(64)}`),
+      404,
+      'CANCELLATION_LINK_UNAVAILABLE',
+    )
+
+    const { publicReference, cancellationToken } = await createGuestBooking()
+    await request(db, '/api/public/guest-cancellation', {
+      body: { token: cancellationToken },
+    })
+
+    const used = await expectApiError(
+      await request(db, `/api/public/guest-cancellation/${cancellationToken}`),
+      404,
+      'CANCELLATION_LINK_UNAVAILABLE',
+    )
+
+    expect(used.message).toBe(unknown.message)
+    expect(bookingRow(db, publicReference)?.status).toBe('cancelled')
+  })
+})
+
 describe('customer booking routes', () => {
   it('requires a customer session', async () => {
     await expectApiError(

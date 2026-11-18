@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { listServices } from '../mock/api'
+import { listServices } from '../lib/api'
 import { useAsync, useDocumentTitle } from '../lib/hooks'
 import { ServiceRow } from '../components/ServiceRow'
 import { Stepper } from '../components/Stepper'

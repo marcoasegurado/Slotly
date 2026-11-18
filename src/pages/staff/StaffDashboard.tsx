@@ -1,22 +1,23 @@
 import { Link } from 'react-router-dom'
-import { getStaffDashboard } from '../../mock/api'
+import { getStaffDashboard } from '../../lib/api'
 import {
   useAsync,
   useDocumentTitle,
-  useMockDb,
+  useBusiness,
   useSession,
 } from '../../lib/hooks'
 import { formatDateKey, todayDateKey } from '../../lib/time'
 import { buttonClassName } from '../../components/Button'
 import { Card, CardHeader } from '../../components/Card'
-import { StaffAppointmentRow } from '../../components/StaffAppointmentRow'
+import { ManagedAppointmentRow } from '../../components/ManagedAppointmentRow'
 import { StateBlock } from '../../components/StateBlock'
 
 export function StaffDashboardPage() {
   useDocumentTitle('Staff dashboard')
-  const db = useMockDb()
+  const business = useBusiness()
   const session = useSession()
-  const dashboard = useAsync(() => getStaffDashboard(), [db])
+  const timezone = business.timezone
+  const dashboard = useAsync(() => getStaffDashboard(), [])
 
   const data = dashboard.data
 
@@ -28,7 +29,7 @@ export function StaffDashboardPage() {
           <h1 style={{ fontSize: '2rem' }}>Dashboard</h1>
           <p className="lede">
             {session ? `Signed in as ${session.name}. ` : ''}
-            {formatDateKey(todayDateKey(db.business.timezone))}
+            {formatDateKey(todayDateKey(timezone))}
           </p>
         </div>
         <Link className={buttonClassName('primary')} to="/staff/appointments">
@@ -94,10 +95,11 @@ export function StaffDashboardPage() {
               {data.today.length > 0 ? (
                 <ul className="staff-list">
                   {data.today.map((appointment) => (
-                    <StaffAppointmentRow
-                      key={appointment.id}
+                    <ManagedAppointmentRow
+                      key={appointment.publicReference}
                       appointment={appointment}
-                      timezone={db.business.timezone}
+                      timezone={timezone}
+                      basePath="/staff/appointments"
                       showDate={false}
                     />
                   ))}
@@ -125,10 +127,11 @@ export function StaffDashboardPage() {
               {data.pending.length > 0 ? (
                 <ul className="staff-list">
                   {data.pending.slice(0, 6).map((appointment) => (
-                    <StaffAppointmentRow
-                      key={appointment.id}
+                    <ManagedAppointmentRow
+                      key={appointment.publicReference}
                       appointment={appointment}
-                      timezone={db.business.timezone}
+                      timezone={timezone}
+                      basePath="/staff/appointments"
                     />
                   ))}
                 </ul>
@@ -152,10 +155,11 @@ export function StaffDashboardPage() {
             {data.upcoming.length > 0 ? (
               <ul className="staff-list">
                 {data.upcoming.slice(0, 8).map((appointment) => (
-                  <StaffAppointmentRow
-                    key={appointment.id}
+                  <ManagedAppointmentRow
+                    key={appointment.publicReference}
                     appointment={appointment}
-                    timezone={db.business.timezone}
+                    timezone={timezone}
+                    basePath="/staff/appointments"
                   />
                 ))}
               </ul>

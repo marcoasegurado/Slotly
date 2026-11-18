@@ -98,6 +98,7 @@ export interface Booking {
   endAt: number
   status: AppointmentStatus
   customerNote: string | null
+  resolutionNote: string | null
   guestName: string | null
   guestEmail: string | null
   /** Unix seconds. */

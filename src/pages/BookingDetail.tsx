@@ -1,7 +1,18 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { cancelMyBooking } from '../mock/api'
-import { errorMessage, useDocumentTitle, useMockDb, useSession } from '../lib/hooks'
+import {
+  ApiError,
+  cancelMyBooking,
+  getMyBooking,
+  type Booking,
+} from '../lib/api'
+import {
+  errorMessage,
+  useAsync,
+  useBusiness,
+  useDocumentTitle,
+  useSession,
+} from '../lib/hooks'
 import {
   formatDateKey,
   formatDuration,
@@ -14,10 +25,14 @@ import { StateBlock } from '../components/StateBlock'
 import { StatusTag } from '../components/StatusTag'
 import { Dialog } from '../components/Dialog'
 
+function isoOf(seconds: number): string {
+  return new Date(seconds * 1000).toISOString()
+}
+
 export function BookingDetailPage() {
-  const { id = '' } = useParams()
+  const { id: reference = '' } = useParams()
   const navigate = useNavigate()
-  const db = useMockDb()
+  const business = useBusiness()
   const session = useSession()
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -25,13 +40,82 @@ export function BookingDetailPage() {
 
   useDocumentTitle('Booking details')
 
-  const appointment = db.appointments.find((entry) => entry.id === id)
-  const owned =
-    appointment !== undefined &&
-    session?.role === 'customer' &&
-    appointment.customerUserId === session.id
+  const isCustomer = session?.role === 'customer'
+  const booking = useAsync<Booking | null>(
+    async () => {
+      if (!isCustomer) return null
+      try {
+        return await getMyBooking(reference)
+      } catch (cause) {
+        if (cause instanceof ApiError && cause.status === 404) return null
+        throw cause
+      }
+    },
+    [isCustomer, reference],
+  )
 
-  if (!appointment || !owned) {
+  const appointment = booking.data
+
+  if (!isCustomer) {
+    return (
+      <div className="container main--narrow">
+        <Card>
+          <StateBlock
+            icon="?"
+            title="That appointment is not available"
+            actions={
+              <>
+                <Link className={buttonClassName('primary')} to="/appointments">
+                  My appointments
+                </Link>
+                <Link className={buttonClassName('secondary')} to="/book">
+                  Book an appointment
+                </Link>
+              </>
+            }
+          >
+            Sign in with the customer account that made this booking to see it.
+          </StateBlock>
+        </Card>
+      </div>
+    )
+  }
+
+  if (booking.loading && !appointment) {
+    return (
+      <div className="container main--narrow">
+        <Card>
+          <div className="skeleton-row">
+            <div className="skeleton" style={{ width: '40%' }} />
+            <div className="skeleton" style={{ width: '70%' }} />
+            <div className="skeleton" style={{ width: '55%' }} />
+          </div>
+        </Card>
+      </div>
+    )
+  }
+
+  if (booking.error) {
+    return (
+      <div className="container main--narrow">
+        <Card>
+          <StateBlock
+            icon="!"
+            title="We could not load that appointment"
+            actions={
+              <Button variant="secondary" size="sm" onClick={booking.reload}>
+                Try again
+              </Button>
+            }
+          >
+            {booking.error.message}
+          </StateBlock>
+        </Card>
+      </div>
+    )
+  }
+
+  if (!appointment) {
     return (
       <div className="container main--narrow">
         <Card>
@@ -56,8 +140,9 @@ export function BookingDetailPage() {
     )
   }
 
-  const businessDateKey = toDateKey(new Date(appointment.startAt), db.business.timezone)
-  const canCancel = appointment.status === 'pending' && appointment.customerUserId !== null
+  const timezone = business.timezone
+  const businessDateKey = toDateKey(new Date(appointment.startAt * 1000), timezone)
+  const canCancel = appointment.status === 'pending'
 
   return (
     <div className="container">
@@ -69,10 +154,14 @@ export function BookingDetailPage() {
         <div className="row row--between row--wrap">
           <div className="stack stack--tight">
             <span className="eyebrow">Appointment</span>
-            <h1 style={{ fontSize: '1.9rem' }}>{appointment.serviceNameSnapshot}</h1>
+            <h1 style={{ fontSize: '1.9rem' }}>{appointment.serviceName}</h1>
             <p className="lede">
               {formatDateKey(businessDateKey)} ·{' '}
-              {formatTimeRange(appointment.startAt, appointment.endAt, db.business.timezone)}
+              {formatTimeRange(
+                isoOf(appointment.startAt),
+                isoOf(appointment.endAt),
+                timezone,
+              )}
             </p>
           </div>
           <StatusTag status={appointment.status} />
@@ -94,21 +183,25 @@ export function BookingDetailPage() {
             <dd className="mono">{appointment.publicReference}</dd>
 
             <dt>Service</dt>
-            <dd>{appointment.serviceNameSnapshot}</dd>
+            <dd>{appointment.serviceName}</dd>
 
             <dt>Duration</dt>
-            <dd className="mono">{formatDuration(appointment.durationMinutesSnapshot)}</dd>
+            <dd className="mono">{formatDuration(appointment.durationMinutes)}</dd>
 
             <dt>Date</dt>
             <dd>{formatDateKey(businessDateKey)}</dd>
 
             <dt>Time</dt>
             <dd className="mono">
-              {formatTimeRange(appointment.startAt, appointment.endAt, db.business.timezone)}
+              {formatTimeRange(
+                isoOf(appointment.startAt),
+                isoOf(appointment.endAt),
+                timezone,
+              )}
             </dd>
 
             <dt>Contact</dt>
-            <dd>{appointment.guestEmail}</dd>
+            <dd>{session?.email ?? '—'}</dd>
 
             <dt>Notes</dt>
             <dd>{appointment.customerNote ?? 'None'}</dd>
@@ -123,7 +216,8 @@ export function BookingDetailPage() {
               <div>
                 <div className="timeline__label">Requested</div>
                 <div className="timeline__note">
-                  Sent {new Date(appointment.createdAt).toLocaleDateString()}
+                  Sent{' '}
+                  {new Date(appointment.createdAt * 1000).toLocaleDateString()}
                 </div>
               </div>
             </li>
@@ -167,8 +261,8 @@ export function BookingDetailPage() {
             <div>
               <div className="notice__title">Need to change a confirmed appointment?</div>
               <p>
-                {db.business.businessEmail
-                  ? `Contact the business at ${db.business.businessEmail}.`
+                {business.businessEmail
+                  ? `Contact the business at ${business.businessEmail}.`
                   : 'Contact the business directly.'}{' '}
                 Confirmed bookings cannot be cancelled from this page.
               </p>
@@ -202,7 +296,7 @@ export function BookingDetailPage() {
               disabled={busy}
               onClick={() => {
                 setBusy(true)
-                void cancelMyBooking(appointment.id)
+                void cancelMyBooking(appointment.publicReference)
                   .then(() => {
                     setConfirming(false)
                     navigate('/appointments')
