@@ -8,9 +8,10 @@ The build stopped after the full local browser QA pass over the wired client. Ev
 has a Worker endpoint was driven in a real headless Chrome against a local Worker (`wrangler
 dev` on 8787) and Vite (5173) with local D1 seeded.
 
-This is a commit-ready stopping point: `npm run typecheck`, `npm test` (159 tests in 17 files)
-and `npm run build` pass, the signed-out page audit passes 33/33 route-width checks, and the
-flow and account suites pass with 0 failures.
+This work is committed (`cf57a3d Harden live client flows after browser QA`), pushed to
+`origin/main`, and deployed. `npm run typecheck`, `npm test` (159 tests in 17 files) and
+`npm run build` pass, the signed-out page audit passes 33/33 route-width checks, and the flow
+and account suites pass with 0 failures.
 
 ## Verified in this session
 
@@ -81,15 +82,23 @@ flow and account suites pass with 0 failures.
 3. Next product work: the admin reports summary/CSV screen, then admin staff management, then
    business settings. Keep the report APIs as the source of truth and do not invent metrics.
 4. Do not begin email configuration until a verified Resend sender exists.
-5. Do not deploy until the owner explicitly approves; the deployed bundle predates the wiring
-   and QA fixes in this session.
+5. The live bundle now includes the client wiring and QA fixes. Re-run the acceptance checks
+   before any further deploy, and do not deploy without explicit owner approval.
 
 ## Deployment state
 
 - Deployed URL: `https://slotly.marcoeduardo-asegurado.workers.dev`
-- Deployed version ID: `9b72f3ee-c1a9-4076-8e26-86668af9f8a8` (predates this session's changes)
+- Deployed version ID: `21f174ab-231c-4384-9fcd-19ec0ac8dd10` (commit `cf57a3d`), deployed
+  18 November 2026. It includes the wired client and the QA fixes above.
+- Post-deploy smoke checks (read-only, no production writes): `/api/health` 200 `ok`;
+  `/api/public/business` returns `Slotly Studio` / `Asia/Manila` / 60-day window;
+  `/api/public/services` 200 with 4 services; `/` 200 serving the new `index-DKcxSvyr.js`
+  bundle with the favicon link; `/favicon.svg` 200 `image/svg+xml`; unauthenticated
+  `/api/admin/dashboard` returns 401.
+- No migration was required or applied for this deploy, and no remote D1 rows were written.
+- Email delivery remains disabled (`EMAIL_TRANSPORT=none`) until a verified Resend sender and
+  key exist.
 - Production data was not reset.
-- No remote Cloudflare resource, migration or secret was changed in this session.
 - `.local-secrets/` remains gitignored and must not be committed or printed.
 
 ## Repository safety

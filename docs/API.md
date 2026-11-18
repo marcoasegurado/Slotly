@@ -1,6 +1,6 @@
 # Slotly API Contract
 
-**Status:** Phase 3 foundation, Phase 4 authentication, Phase 5 services/schedules/availability, and the Phase 6 guest/customer booking and cancellation backend are implemented on the Hono Worker. The public business/services reads are wired into the React client; other client flows remain mock-backed until their API phases. Align this contract with the actual implementation as routes are built, keep route handlers thin and enforce all authorization on the server.
+**Status:** Phases 3–9 backend contracts are implemented on the Hono Worker and the React client consumes every implemented endpoint (public reads and availability, auth, guest/customer booking and cancellation, staff and admin appointment management, services, staff schedules, dashboard and reports). The remaining unwired areas are admin staff management, the reports summary/CSV screen and business settings in the client. Align this contract with the actual implementation as routes are built, keep route handlers thin and enforce all authorization on the server.
 
 ## 1. Conventions
 

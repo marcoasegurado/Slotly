@@ -20,8 +20,7 @@ if (!container) {
   throw new Error('Root element #root was not found.')
 }
 
-// Load the real public business/services data when the Worker is available.
-// The remaining booking and workspace flows stay mock-backed for now.
+// Load the live public business/services data before the first render settles.
 void hydratePublicData()
 void startSession()
 

@@ -227,25 +227,26 @@ Still pending until the client is wired and email is configured:
 - PBKDF2 is capped by workerd at 100,000 iterations, below the 600,000 OWASP
   recommendation. The Durable Object only moves the cost; it does not make the
   work factor stronger.
-- The React client still uses the in-memory mock repository for booking,
-  customer, staff and admin flows. Only public business/services reads are
-  API-backed. Those mock flows are not production-ready until wired to the
-  Phase 3-9 APIs.
+- The React client is API-backed for booking, customer, staff and admin flows and
+  is deployed with the Worker. An automated contrast/axe pass is still missing;
+  the browser harness in `TESTING.md` §11 covers structure, focus containment,
+  overflow and control names only.
 - Production has four services, one Admin and three Staff accounts. The Admin
   password is not recorded in the repository; the Staff temporary passwords are
   only in `.local-secrets/` until they are delivered and deleted.
 - Transactional email is disabled (`EMAIL_TRANSPORT = "none"`); no verified
   Resend sender or key exists, so outbox rows would not deliver.
-- Admin workspace UI, admin-issued staff passwords, staff management, service
-  management UI and business settings UI are not implemented.
+- Admin staff management (create staff, reissue a temporary password, deactivate),
+  the business settings screen and the reports summary/CSV screen are not
+  implemented in the client.
 - The app is served from the workers.dev hostname; no custom domain is attached.
 - Per-isolate rate limiting is best effort and not a durable, global limiter.
 - Worker error logs redact the guest token from the path. Cloudflare's own request
   logs and `wrangler tail` still show the requested URL, so treat tail output as
   sensitive, avoid sharing it, and review Cloudflare log retention before launch.
-- There is no automated accessibility or end-to-end browser suite yet; Phase 10
-  accessibility checks in `TESTING.md` apply once the client flows use the real
-  APIs.
+- There is no automated contrast or axe pass yet. The CDP browser harness covers
+  structure, focus containment, overflow and control names; run it with
+  `npm run qa:ui:audit|flows|accounts` as described in `TESTING.md` §11.
 - Local `wrangler dev` and local D1 commands cannot run on macOS below 13.5
   because workerd does not support it. Remote D1/deploy operations still work.
 - No backups beyond D1 Time Travel, no staging environment and no uptime

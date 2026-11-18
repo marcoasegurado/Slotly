@@ -78,7 +78,7 @@ The project owner plans to deploy the production app on Cloudflare:
 - Hono API running on Cloudflare Workers.
 - Cloudflare D1 for persistence.
 
-Deployment is Phase 10 work. The Worker, the `slotly` D1 database and the admin bootstrap are live at `https://slotly.marcoeduardo-asegurado.workers.dev`; email delivery is disabled until a verified Resend sender exists. The React client still uses the in-memory mock for booking, customer, staff and admin flows, so the public booking UI is not production-ready yet.
+Deployment is Phase 10 work. The Worker, the `slotly` D1 database, the admin bootstrap and the API-backed React client are live at `https://slotly.marcoeduardo-asegurado.workers.dev` (version `21f174ab-231c-4384-9fcd-19ec0ac8dd10`); email delivery is disabled until a verified Resend sender exists.
 
 `docs/DEPLOYMENT.md` is the Phase 10 runbook: preflight checks, the PBKDF2/CPU decision, D1 migrations, business settings and first-Admin bootstrap, secrets, deploy, smoke tests, rollback and known limitations. Remote changes require approval for that exact step.
 
@@ -98,7 +98,7 @@ Authentication and sessions (Phase 4, backend):
 - Opaque session tokens in an `HttpOnly`, `SameSite=Lax` cookie; D1 stores only the token's SHA-256 hash. Sessions expire after 7 days and are revoked on logout or password change.
 - Origin-based CSRF protection for mutating requests, role and forced-password-change middleware, generic login failures and best-effort per-isolate login/registration rate limits.
 - Local demo users with hashed passwords. Regenerate them with `npm run auth:hash:demo`; benchmark hashing with `npm run auth:bench`.
-- The UI does not yet use the auth routes; the mock sign-in remains in place until the client integration phase.
+- The client signs in through these routes: session startup calls `GET /api/auth/me`, and sign-in, registration, logout and the forced/voluntary password change all call the Worker.
 
 Services, schedules and availability (Phase 5, backend):
 
@@ -114,7 +114,7 @@ Guest and customer bookings (Phase 6, backend):
 - Guest bookings return a one-time cancellation token. D1 stores only its SHA-256 hash, and the token expires at the appointment start or after 72 hours, whichever comes first.
 - `POST /api/public/guest-cancellation` cancels only the linked pending guest booking. Unknown, used, expired, confirmed, cancelled and other invalid links all return the same `404 CANCELLATION_LINK_UNAVAILABLE`.
 - `GET /api/customer/bookings`, `GET /api/customer/bookings/:id` and `POST /api/customer/bookings/:id/cancel` require a customer session, use the public `SLO-...` reference and allow only pending self-cancellation.
-- Booking creation and guest cancellation are rate limited per client IP. The customer booking UI still uses the mock repository until the client integration phase.
+- Booking creation and guest cancellation are rate limited per client IP. The client creates guest and signed-in bookings, reads customer history and cancels pending bookings through these routes.
 
 Staff and admin appointment management (Phase 7, backend):
 
@@ -154,22 +154,24 @@ Quality and deployment preparation (Phase 10, deployed to workers.dev):
 - `npm run services:create` creates or updates the initial services idempotently.
 - The Worker is deployed at `https://slotly.marcoeduardo-asegurado.workers.dev` against the `slotly` D1 database. Production has business settings, one Admin account, three Staff accounts and four services.
 - Email is disabled (`EMAIL_TRANSPORT=none`) until a verified Resend domain and `RESEND_API_KEY` exist; no outbox rows are delivered yet.
-- Client integration and the UI accessibility/responsive checks are still deferred because the React flows remain mock-backed.
+- Client integration is complete for every implemented endpoint, and the signed-out audit plus the guest/customer/staff/admin browser flows pass at 390/768/1440 through `npm run qa:ui:audit|flows|accounts`. An automated contrast/axe pass is still missing.
 
-Mock UI (still in memory):
+Client flows (all Worker-backed):
 
-- Public service/date/time selection, guest booking and customer booking.
-- Guest cancellation with a private token that works only while the request is pending.
-- Customer sign-in, registration and appointment history.
-- Staff sign-in and staff-only workspace:
+- Public service/date/time selection, guest booking and signed-in customer booking.
+- Guest cancellation with a private token that works only while the request is pending; read-only GET page, explicit POST cancellation.
+- Customer sign-in, registration and appointment history/detail/cancel.
+- Staff workspace:
   - dashboard, assigned queue and filters;
   - appointment review, approve, decline and cancel;
   - reschedule within the signed-in staff member's own schedule;
   - weekly working hours and time off, blocked when a change would invalidate a future booking.
+- Admin workspace: dashboard, business-wide queue and detail, reschedule, reassignment to another active staff member, cancel, and service create/edit/deactivate.
 - Pending requests never block customer availability; approval rechecks hours, time off and confirmed overlaps.
 - Staff cannot reassign appointments or view another staff member's assignments.
+- Forced first-login staff password change and voluntary password change.
 
-Deferred: admin workspace UI, admin-issued staff passwords/forced password change, staff account management and settings. Admin service, appointment management, dashboard and report/CSV endpoints exist in the backend API but have no UI yet. Client API wiring and the Phase 10 accessibility/responsive verification are deferred while the React flows remain mock-backed.
+Deferred: admin staff management (create staff, reissue a temporary password, deactivate), the business settings screen, the reports summary/CSV screen, and an automated contrast/axe pass.
 
 ## Source layout
 
@@ -187,8 +189,7 @@ Deferred: admin workspace UI, admin-issued staff passwords/forced password chang
 - `seed/local.sql` — local-only sample business settings, services, hashed demo accounts and demo working hours.
 - `scripts/` — local password-hash generation (demo and Admin bootstrap) and PBKDF2 benchmark commands.
 - `tests/` — schema, repository, auth and Worker API tests using an in-memory D1 adapter.
-- `src/mock/` — in-memory repository and seed data with API-shaped functions.
-- `src/lib/` — time, availability and React hook helpers.
+- `src/lib/` — API clients, session state, time/availability helpers and React hooks.
 - `src/components/` — shared UI and layout components.
 - `src/pages/` — customer routes and `pages/staff/` workspace routes.
 - `src/styles/base.css` — design tokens and component styles.

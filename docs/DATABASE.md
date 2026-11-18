@@ -5,7 +5,7 @@
 ## 1. Database conventions
 
 - Cloudflare D1 (SQLite), accessed only through Worker bindings and typed repositories.
-- Use UTC timestamps for appointment/time-off instants. Persisted timestamps are integer Unix seconds consistently; do not mix formats. The React mock still uses ISO strings and will be mapped when the UI is wired to the API.
+- Use UTC timestamps for appointment/time-off instants. Persisted timestamps are integer Unix seconds consistently; do not mix formats. The React client maps Unix seconds at the API boundary and never sends ISO instants.
 - Store the business timezone as an IANA name (initial display default `Asia/Manila`, editable by Admin). Convert local working hours/date requests using tested timezone utilities.
 - Use prepared statements and bound parameters. Enable/verify foreign-key behavior for each environment.
 - Add ordered migrations. Never edit an already-applied migration; add a new migration for schema changes.
