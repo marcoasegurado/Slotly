@@ -137,8 +137,10 @@ Quality and deployment preparation (Phase 10, deployed to workers.dev):
 - `/cancel/*` is Worker-first so the guest cancellation page is served with `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, `X-Robots-Tag: noindex, nofollow` and `X-Content-Type-Options: nosniff`. Guest tokens are redacted from error-log paths.
 - `public/_headers` adds conservative baseline headers (`X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`) to static pages.
 - Password hashing runs in the `PasswordHasher` Durable Object at the runtime's 100,000-iteration ceiling. This keeps 210k-scale hashing off the request Worker's 10 ms Free-plan CPU budget; legacy weak hashes are rehashed on successful login.
-- `npm run auth:hash:admin` generates a one-time Admin INSERT with a PBKDF2 hash for production bootstrap; the plaintext password is never printed.
-- The Worker is deployed at `https://slotly.marcoeduardo-asegurado.workers.dev` against the `slotly` D1 database. Production has business settings and one admin account; services are empty.
+- `npm run admin:reset` writes a one-time Admin password-reset SQL file and a generated password to a gitignored `.local-secrets/` directory; neither is printed to stdout.
+- `npm run staff:create` creates the production Staff accounts with temporary passwords (`must_change_password`, 72-hour expiry), `staff_profiles` rows and weekly working hours; plaintext credentials go only to `.local-secrets/`.
+- `npm run services:create` creates or updates the initial services idempotently.
+- The Worker is deployed at `https://slotly.marcoeduardo-asegurado.workers.dev` against the `slotly` D1 database. Production has business settings, one Admin account, three Staff accounts and four services.
 - Email is disabled (`EMAIL_TRANSPORT=none`) until a verified Resend domain and `RESEND_API_KEY` exist; no outbox rows are delivered yet.
 - Client integration and the UI accessibility/responsive checks are still deferred because the React flows remain mock-backed.
 

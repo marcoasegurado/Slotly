@@ -15,7 +15,10 @@
     "db:seed:local": "wrangler d1 execute DB --local --file=./seed/local.sql",
     "auth:hash:demo": "vite-node scripts/generate-demo-passwords.ts",
     "auth:hash:admin": "vite-node scripts/hash-admin.ts",
-    "auth:bench": "vite-node scripts/benchmark-password.ts"
+    "auth:bench": "vite-node scripts/benchmark-password.ts",
+    "admin:reset": "vite-node scripts/reset-admin-password.ts",
+    "staff:create": "vite-node scripts/create-staff.ts",
+    "services:create": "vite-node scripts/create-services.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.0.0",

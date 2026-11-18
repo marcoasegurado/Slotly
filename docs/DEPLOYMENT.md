@@ -92,7 +92,8 @@ INSERT INTO business_settings (
 
 ### 4.2 Admin account
 
-Generate the INSERT locally so the password hash is never typed into SQL:
+There are two ways to create the first Admin. For a fresh install, generate the
+INSERT locally so the hash is never typed into SQL:
 
 ```bash
 SLOTLY_ADMIN_NAME="Business Owner" \
@@ -101,18 +102,45 @@ SLOTLY_ADMIN_PASSWORD="a-long-unique-password" \
 npm run auth:hash:admin > bootstrap-admin.sql
 ```
 
-Review `bootstrap-admin.sql`, run it with explicit approval, then delete the
-file:
+For an existing account, reset it instead (`npm run admin:reset`). It generates
+a random password, writes the `UPDATE` to `.local-secrets/reset-admin.sql` and
+the password to `.local-secrets/admin-password.txt` (mode 0600). Neither is
+printed to stdout, so the value stays out of shell history and logs. The reset
+also revokes every session for that account.
 
 ```bash
-npx wrangler d1 execute DB --remote --file=bootstrap-admin.sql
-rm bootstrap-admin.sql
+npm run admin:reset
+npx wrangler d1 execute DB --remote --file=.local-secrets/reset-admin.sql
+# read the password once, then:
+rm -rf .local-secrets
 ```
 
-The output contains only the versioned PBKDF2 hash. Do not keep the plaintext
-password in shell history, tickets or the repository. The existing production
-admin hash used 5,000 iterations and is rehashed to 100,000 on the next
-successful login.
+`.local-secrets/` is gitignored. Never commit a generated SQL file or a
+plaintext password.
+
+### 4.3 Staff accounts
+
+```bash
+npm run staff:create
+npx wrangler d1 execute DB --remote --file=.local-secrets/create-staff.sql
+```
+
+Creates the three Staff accounts with temporary passwords (`must_change_password`,
+72-hour expiry), `staff_profiles` rows and weekly working hours. The plaintext
+passwords go only to `.local-secrets/staff-credentials.txt`; deliver each one
+privately and delete the directory. Staff cannot use staff routes until they set
+a new password.
+
+### 4.4 Services
+
+```bash
+npm run services:create
+npx wrangler d1 execute DB --remote --file=.local-secrets/create-services.sql
+```
+
+Idempotent: it inserts or updates the four initial services. Renaming a service
+never changes an existing appointment, because each appointment stores a
+name/duration snapshot.
 
 ## 5. Secrets and email configuration (not configured)
 
@@ -203,9 +231,9 @@ Still pending until the client is wired and email is configured:
   customer, staff and admin flows. Only public business/services reads are
   API-backed. Those mock flows are not production-ready until wired to the
   Phase 3-9 APIs.
-- Production has no services, and the admin password is not recorded in the
-  repository. Service, staff and schedule setup currently requires the API or
-  the documented SQL.
+- Production has four services, one Admin and three Staff accounts. The Admin
+  password is not recorded in the repository; the Staff temporary passwords are
+  only in `.local-secrets/` until they are delivered and deleted.
 - Transactional email is disabled (`EMAIL_TRANSPORT = "none"`); no verified
   Resend sender or key exists, so outbox rows would not deliver.
 - Admin workspace UI, admin-issued staff passwords, staff management, service
