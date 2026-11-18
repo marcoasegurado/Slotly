@@ -165,7 +165,7 @@ Before choosing the password-hashing implementation:
 - Verify whether any proposed bcrypt/Argon2 package works in the deployed Workers runtime and its WASM/CPU characteristics. Do not assume Node-native dependencies will work.
 - Record the chosen algorithm/version/parameters with each stored hash so parameters can be upgraded. Never use plain SHA-256/SHA-512 as a password hash.
 
-**Phase 4 implementation note (16 November 2026):** The Worker uses WebCrypto PBKDF2-HMAC-SHA-256 with a 16-byte random salt, a 32-byte derived key and 210,000 iterations in the versioned format above. `npm run auth:bench` measured roughly 250–300 ms per hash/verify on the development machine (Node WebCrypto). That exceeds the Workers Free plan's 10 ms CPU limit, so the production Workers plan and final iteration count must be validated before deployment. The version prefix allows a later parameter upgrade without changing the schema.
+**Phase 4 implementation note (18 November 2026):** The Worker uses WebCrypto PBKDF2-HMAC-SHA-256 with a 16-byte random salt, a 32-byte derived key and 100,000 iterations in the versioned format above. workerd rejects higher iteration counts at runtime, so 100,000 is the platform ceiling. Hashing and verification run inside the `PasswordHasher` Durable Object because the Free plan's request CPU budget is 10 ms; Durable Objects allow 30 s per request. Hashes created with older parameters are rehashed on successful login. The version prefix allows a later parameter upgrade without changing the schema.
 
 Official references (re-check on implementation):
 - [D1 Database API and `batch()`](https://developers.cloudflare.com/d1/worker-api/d1-database/)

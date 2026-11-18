@@ -12,6 +12,11 @@ export interface Env {
    * always receives it in local development and production.
    */
   ASSETS?: Fetcher
+  /**
+   * Durable Object namespace that runs PBKDF2 outside the request Worker's
+   * CPU budget. Optional so unit tests can construct a minimal environment.
+   */
+  PASSWORD_HASHER?: DurableObjectNamespace
   ENVIRONMENT?: string
   /** Verified sender for transactional email, for example `Slotly <hello@example.com>`. */
   EMAIL_FROM?: string

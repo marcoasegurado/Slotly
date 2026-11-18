@@ -9,18 +9,20 @@ import {
  * Password hashes are versioned so parameters can be upgraded later:
  * pbkdf2-sha256$v1$<iterations>$<salt-hex>$<hash-hex>
  *
- * 210,000 iterations is the current baseline. Final CPU-cost validation must
- * happen against the actual Workers plan before production deployment.
+ * 100,000 iterations is the maximum the Cloudflare Workers runtime accepts for
+ * PBKDF2-HMAC-SHA-256; workerd rejects higher counts at runtime. The hash runs
+ * inside the PasswordHasher Durable Object so the cost does not count against
+ * the request Worker's CPU budget (10 ms on the Free plan).
  */
 export const PASSWORD_MIN_LENGTH = 8
 export const PASSWORD_MAX_LENGTH = 128
-export const PBKDF2_ITERATIONS = 210_000
+export const PBKDF2_ITERATIONS = 100_000
 
 const ALGORITHM = 'pbkdf2-sha256'
 const VERSION = 'v1'
 const SALT_BYTES = 16
 const HASH_BITS = 256
-const MAX_ACCEPTED_ITERATIONS = 2_000_000
+const MAX_ACCEPTED_ITERATIONS = 100_000
 
 export function passwordPolicyError(password: string): string | null {
   if (password.length < PASSWORD_MIN_LENGTH) {
@@ -92,7 +94,12 @@ export async function verifyPassword(
   const expected = hexToBytes(hashHex)
   if (!salt || !expected || expected.length !== HASH_BITS / 8) return false
 
-  const actual = await derivePasswordBytes(password, salt, iterations)
+  let actual: Uint8Array
+  try {
+    actual = await derivePasswordBytes(password, salt, iterations)
+  } catch {
+    return false
+  }
   return constantTimeEqual(actual, expected)
 }
 
@@ -105,15 +112,14 @@ export function passwordNeedsRehash(storedHash: string): boolean {
   )
 }
 
-let dummyHash: Promise<string> | null = null
-
 /**
  * A real hash used to keep unknown-email login attempts on the same hashing
- * path as known accounts. The value is not a credential.
+ * path as known accounts. The value is not a credential, and it is a constant
+ * so the request Worker never derives it on the CPU-budgeted path.
  */
+export const DUMMY_PASSWORD_HASH =
+  'pbkdf2-sha256$v1$100000$9bd0173cbd23e888efdc49562f87e9fd$2bd857aaa0ffac6fe88bf4c9b0a2f794ba0db3f1e734e633bb2b316570833480'
+
 export function getDummyPasswordHash(): Promise<string> {
-  if (!dummyHash) {
-    dummyHash = hashPassword('slotly-timing-equalizer-not-a-credential')
-  }
-  return dummyHash
+  return Promise.resolve(DUMMY_PASSWORD_HASH)
 }

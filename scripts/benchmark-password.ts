@@ -3,7 +3,8 @@
  * `worker/auth/password.ts`.
  *
  * This measures Node's WebCrypto on the development machine. It is a sanity
- * check, not a substitute for measuring the deployed Cloudflare Workers plan.
+ * check only: workerd caps PBKDF2 at 100,000 iterations and production hashing
+ * runs inside the PasswordHasher Durable Object, not the request Worker.
  *
  * Usage:
  *   npm run auth:bench

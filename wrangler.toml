@@ -15,28 +15,34 @@ not_found_handling = "single-page-application"
 run_worker_first = ["/api/*", "/cancel/*"]
 
 [vars]
-ENVIRONMENT = "development"
+ENVIRONMENT = "production"
 # Verified sender used by transactional email. Replace with a real verified
-# address/domain before deployment; local development uses this safe default.
+# address/domain before enabling email delivery.
 EMAIL_FROM = "Slotly <hello@slotly.studio>"
-# Optional Reply-To fallback when business settings have no business email.
-# EMAIL_REPLY_TO = "hello@slotly.studio"
-# Delivery selection: `console` (local), `resend` (requires RESEND_API_KEY),
-# or `none`. Leave unset to use Resend when a key exists and the console
-# transport otherwise. Set RESEND_API_KEY via `.dev.vars` locally or
-# `wrangler secret put RESEND_API_KEY` at deployment; never commit it.
-# EMAIL_TRANSPORT = "console"
+# No verified Resend domain or API key is configured yet, so delivery is
+# explicitly disabled instead of logging message payloads to the console.
+EMAIL_TRANSPORT = "none"
 
-# Retry undelivered/pending email every 15 minutes. Deployment is Phase 10, so
-# this trigger is local configuration only until then.
+# Retry undelivered/pending email every 15 minutes. The trigger is active on
+# the deployed Worker.
 [triggers]
 crons = ["*/15 * * * *"]
 
-# Local development only. `wrangler dev` and `wrangler d1 --local` use the
-# local Miniflare database and never contact this ID. A real UUID will be set
-# only during the approved Phase 10 deployment; do not invent a production ID.
+# Production D1 database. Local `wrangler dev` and `d1 --local` still use the
+# Miniflare database and never contact this ID.
 [[d1_databases]]
 binding = "DB"
-database_name = "slotly-local"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_name = "slotly"
+database_id = "e3b8b87c-de92-4f31-bff2-89f0e4aabf3f"
 migrations_dir = "migrations"
+
+# PBKDF2 runs in a Durable Object so the 100,000-iteration workerd ceiling fits
+# the Workers Free plan's 10 ms CPU budget per request. SQLite-backed classes
+# are the Free-plan-compatible storage backend.
+[[durable_objects.bindings]]
+name = "PASSWORD_HASHER"
+class_name = "PasswordHasher"
+
+[[migrations]]
+tag = "v1-password-hasher"
+new_sqlite_classes = ["PasswordHasher"]

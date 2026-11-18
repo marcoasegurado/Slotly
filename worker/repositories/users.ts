@@ -34,6 +34,21 @@ export class UsersRepository {
       .first<UserRecord>()
   }
 
+  async updatePasswordHash(
+    userId: string,
+    passwordHash: string,
+    now: number,
+  ): Promise<void> {
+    await this.db
+      .prepare(
+        `UPDATE users
+            SET password_hash = ?, updated_at = ?
+          WHERE id = ?`,
+      )
+      .bind(passwordHash, now, userId)
+      .run()
+  }
+
   async createCustomer(input: {
     id: string
     name: string

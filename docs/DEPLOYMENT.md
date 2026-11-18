@@ -1,31 +1,34 @@
 # Slotly deployment runbook
 
-Phase 10 prepares the Cloudflare deployment. **Nothing in this file has been
-executed against Cloudflare.** Creating resources, enabling billing, applying
-remote migrations, bootstrapping production data and deploying all require
-explicit approval for that exact step.
+Phase 10 is deployed to Cloudflare Workers on the Free plan at
+`https://slotly.marcoeduardo-asegurado.workers.dev`. This file records the
+executed steps and the remaining approval gates. Creating resources, applying
+remote schema/data changes or publishing a new version still requires explicit
+approval for that exact step.
 
 The project target is one Cloudflare Worker with static assets, one D1 database
 and the email integration from Phase 8. There is no multi-tenant setup.
 
-## 1. Decisions required before any remote command
+## 1. Decisions
 
-1. **Workers plan and PBKDF2 cost.** Login and registration hash passwords with
-   PBKDF2-HMAC-SHA-256. `npm run auth:bench` measured roughly 250-300 ms per
-   hash/verify on the development machine at the current 210,000 iterations.
-   That exceeds the Workers Free plan's 10 ms CPU budget per request. Either
-   deploy on a plan whose CPU limit fits the chosen work factor, or lower the
-   documented iterations and re-evaluate the security trade-off. Do not deploy
-   on Free with the current parameters.
-2. **Production domain.** Needed for `Origin`/cookie behavior and for a verified
-   Resend sender. Do not invent a domain.
-3. **Email sender.** A Resend account with a verified domain (SPF/DKIM) and a
-   `RESEND_API_KEY`. The repository only contains a placeholder sender.
-4. **Production D1 database.** Created by the project owner; the real
-   `database_id` replaces the all-zero placeholder in `wrangler.toml` at
-   deployment time. Never commit a guessed ID.
-5. **First Admin account.** Production is not seeded with demo data. Use the
-   bootstrap steps in section 4.
+1. **Workers plan and PBKDF2 cost.** workerd rejects PBKDF2 iteration counts
+   above 100,000, so the Worker uses the maximum (100,000) and runs the hash
+   inside the `PasswordHasher` Durable Object. Durable Objects get 30 s of CPU
+   per request on both plans, so the Free plan is sufficient and the request
+   Worker stays inside its 10 ms budget. Older hashes are rehashed on successful
+   login. The 100k ceiling is below the 600k OWASP recommendation and is a
+   documented platform limitation, not a configuration choice.
+2. **Production hostname.** The app is live on the workers.dev hostname. A
+   custom domain is deferred; attach one before launch and re-verify HTTPS,
+   cookie `Secure` behavior and same-origin CSRF checks against it.
+3. **Email sender.** No verified Resend domain or key exists. Production runs
+   with `EMAIL_TRANSPORT = "none"`; no email is queued for delivery.
+4. **Production D1 database.** `slotly`
+   (`e3b8b87c-de92-4f31-bff2-89f0e4aabf3f`) exists and has migrations `0001`
+   and `0002` applied.
+5. **First Admin account.** `admin@slotly.studio` exists. Its stored hash used
+   5,000 iterations and is upgraded on the next successful login. The password
+   is not recorded in the repository.
 
 ## 2. Preflight (local, no remote changes)
 
@@ -40,39 +43,39 @@ npx wrangler whoami
 - `npm run build` writes the client to `dist/`; confirm `dist/_headers` exists,
   because Vite copies `public/_headers` into the build output.
 - Confirm `.dev.vars`, `dist/` and `.wrangler/` are untracked, and that no real
-  secret or D1 ID is committed.
+  secret is committed.
 - Confirm the working tree is clean and matches the reviewed commit.
-- Set `ENVIRONMENT = "production"` in `wrangler.toml` for the deployment commit
-  so session cookies use the `Secure` flag. Local development keeps
-  `development`.
+- `ENVIRONMENT = "production"` is set in `wrangler.toml` so session cookies use
+  the `Secure` flag.
 - Review `[assets] run_worker_first`: `/api/*` and `/cancel/*` are Worker-first.
   The cancel page must keep `Referrer-Policy: no-referrer`,
   `Cache-Control: no-store` and `X-Robots-Tag: noindex, nofollow`
   (`worker/routes/app-shell.ts`).
+- Local `wrangler dev`, `db:migrate:local` and `db:seed:local` require workerd,
+  which cannot run on macOS below 13.5. Use a supported OS, DevContainer or
+  remote D1/deploy through the API.
 
-## 3. Create and migrate production D1 (approval required)
+## 3. Production D1 (already created)
+
+`slotly` (`e3b8b87c-de92-4f31-bff2-89f0e4aabf3f`) exists and already has
+migrations `0001` and `0002` applied. Verify without changing anything:
 
 ```bash
-npx wrangler d1 create slotly
+npx wrangler d1 migrations list DB --remote
 ```
 
-Copy the returned UUID into `wrangler.toml` as `[[d1_databases]] database_id`
-and choose the final `database_name`. Then apply the ordered migrations:
-
-```bash
-npx wrangler d1 migrations apply DB --remote
-```
-
+- Do not create a duplicate database.
 - Migrations are forward-only. Never edit an applied migration; add a new one.
 - Do **not** run `npm run db:seed:local` against the remote database. The local
   seed contains demo accounts and demo services.
-- Record which migrations were applied and verify with
-  `npx wrangler d1 migrations list DB --remote`.
+- For a fresh installation only: `npx wrangler d1 create slotly`, put the
+  returned UUID in `wrangler.toml`, then run
+  `npx wrangler d1 migrations apply DB --remote`.
 
-## 4. Bootstrap production data (approval required)
+## 4. Bootstrap production data (already completed)
 
-Production needs one business settings row and one Admin account before the API
-can serve public pages or anyone can sign in.
+Production already has one business settings row and one Admin account. These
+steps are retained for a fresh install or recovery.
 
 ### 4.1 Business settings
 
@@ -107,10 +110,14 @@ rm bootstrap-admin.sql
 ```
 
 The output contains only the versioned PBKDF2 hash. Do not keep the plaintext
-password in shell history, tickets or the repository. Staff accounts are
-created later by the Admin through the staff-management flow.
+password in shell history, tickets or the repository. The existing production
+admin hash used 5,000 iterations and is rehashed to 100,000 on the next
+successful login.
 
-## 5. Secrets and email configuration
+## 5. Secrets and email configuration (not configured)
+
+Production currently has no Worker secrets and runs `EMAIL_TRANSPORT = "none"`,
+so no notification email is sent or logged.
 
 ```bash
 npx wrangler secret put RESEND_API_KEY
@@ -120,13 +127,12 @@ npx wrangler secret put RESEND_API_KEY
   client. Local development uses `.dev.vars` instead.
 - `EMAIL_FROM` in `[vars]` must be a verified sender for the deployment domain.
   Optionally set `EMAIL_REPLY_TO` as the fallback reply address.
-- Leave `EMAIL_TRANSPORT` unset in production so Resend is selected when the key
-  exists. `console` and `none` are for local development and tests.
-- The `*/15 * * * *` cron trigger in `wrangler.toml` becomes active on deploy.
-  It retries `pending`/`failed` outbox rows and reclaims abandoned `sending`
-  rows. No reminder emails exist.
+- After the key and verified sender exist, remove `EMAIL_TRANSPORT = "none"` so
+  Resend is selected. `console` is for local development only.
+- The `*/15 * * * *` cron trigger is active. It retries `pending`/`failed`
+  outbox rows and reclaims abandoned `sending` rows. No reminder emails exist.
 
-## 6. Deploy (approval required)
+## 6. Deploy (executed)
 
 ```bash
 npm run build
@@ -134,44 +140,47 @@ npx wrangler deploy
 ```
 
 - Deployment publishes the built client, the Hono Worker, static asset rules,
-  D1 binding and cron trigger together.
-- Attach the production domain in Cloudflare after the first deploy and verify
-  HTTPS, cookie `Secure` behavior and same-origin CSRF checks against that
-  domain.
-- Record the deployed version ID. Re-deploying is not a rollback.
+  the D1 binding, the `PasswordHasher` Durable Object and the cron trigger
+  together.
+- The first deploy of `PasswordHasher` applies the `v1-password-hasher`
+  Durable Object migration (`new_sqlite_classes`, required on the Free plan).
+- Record the deployed version ID with `npx wrangler deployments list`.
+  Re-deploying is not a rollback.
+- A custom domain is still deferred. Attach it in Cloudflare, then verify
+  HTTPS, cookie `Secure` behavior and same-origin CSRF checks against it.
 
 ## 7. Post-deploy smoke tests
 
-Run with the real domain and real bootstrap credentials:
+Run against `https://slotly.marcoeduardo-asegurado.workers.dev`:
 
 ```bash
-curl -s https://<domain>/api/health
-curl -s https://<domain>/api/public/business
-curl -s https://<domain>/api/public/services
-curl -sI https://<domain>/cancel/smoke-token
+curl -s https://slotly.marcoeduardo-asegurado.workers.dev/api/health
+curl -s https://slotly.marcoeduardo-asegurado.workers.dev/api/public/business
+curl -s https://slotly.marcoeduardo-asegurado.workers.dev/api/public/services
+curl -sI https://slotly.marcoeduardo-asegurado.workers.dev/cancel/smoke-token
 ```
 
-Checks:
+Executed checks:
 
-- `/api/health` returns `status: ok` with the production environment.
-- Public business/services return the bootstrapped settings and services.
-- `/cancel/*` returns HTML with `Referrer-Policy: no-referrer`,
+- `/api/health` returns `status: ok` with `environment: production`.
+- Public business returns the bootstrapped settings.
+- `/cancel/*` returns `200` with `Referrer-Policy: no-referrer`,
   `Cache-Control: no-store`, `X-Robots-Tag: noindex, nofollow` and
-  `X-Content-Type-Options: nosniff`; the token is absent from Worker logs.
-- Admin can sign in, create a service, set staff hours and create a staff
-  account (or bootstrap staff data with approval if that UI is not wired yet).
-- A guest booking returns `SLO-...`, writes one `request_received` outbox row,
-  sends one email from the verified sender and provides a working cancellation
-  link while pending.
-- Staff approval sends `booking_confirmed`; reject/cancel/reschedule/reassign
-  send `booking_update`.
-- `/api/admin/dashboard`, `/api/admin/reports/summary` and
-  `/api/admin/reports/export.csv` return data and CSV headers, and
-  `/api/admin/reports/export.csv` is `text/csv`.
-- Unauthenticated admin routes return `401`; staff/customer sessions return
-  `403`.
-- `npx wrangler tail` shows no passwords, session cookies, guest tokens or
-  cancellation URLs.
+  `X-Content-Type-Options: nosniff`.
+- Unauthenticated `/api/admin/dashboard` returns `401`.
+- A wrong-password login exercises the Durable Object PBKDF2 path and returns a
+  generic `401` rather than `500`/error 1102. `wrangler tail` measured 10 ms CPU
+  on the request Worker and 20 ms CPU in `PasswordHasher` for that request; the
+  hash is no longer charged to the request budget, but the request path is at
+  the Free-plan limit, so watch for error 1102 under repeated logins.
+- Public services currently returns `[]` because production has no services.
+
+Still pending until the client is wired and email is configured:
+
+- Admin sign-in, service creation, staff hours and staff account creation.
+- Guest booking, `request_received` email, cancellation link and staff
+  approval/reject emails.
+- Dashboard/report/CSV checks with real appointment data.
 
 ## 8. Rollback and recovery
 
@@ -182,18 +191,26 @@ Checks:
 - If email delivery fails, the appointment/booking state remains valid; fix the
   provider/key and let the scheduled retry or a manual retry drain the outbox.
 - If the PBKDF2 parameters change, existing versioned hashes still verify and
-  are rehashed on the next successful password change; review
-  `passwordNeedsRehash` before changing the baseline.
+  are rehashed on the next successful login; review `passwordNeedsRehash`
+  before changing the baseline.
 
 ## 9. Known limitations and deferrals
 
+- PBKDF2 is capped by workerd at 100,000 iterations, below the 600,000 OWASP
+  recommendation. The Durable Object only moves the cost; it does not make the
+  work factor stronger.
 - The React client still uses the in-memory mock repository for booking,
-  customer and staff flows. Those flows are not production-ready until the
-  client is wired to the Phase 3-9 APIs; deployment preparation does not make
-  the mock suitable for production.
+  customer, staff and admin flows. Only public business/services reads are
+  API-backed. Those mock flows are not production-ready until wired to the
+  Phase 3-9 APIs.
+- Production has no services, and the admin password is not recorded in the
+  repository. Service, staff and schedule setup currently requires the API or
+  the documented SQL.
+- Transactional email is disabled (`EMAIL_TRANSPORT = "none"`); no verified
+  Resend sender or key exists, so outbox rows would not deliver.
 - Admin workspace UI, admin-issued staff passwords, staff management, service
-  management UI and business settings UI are not implemented. Bootstrap and
-  service/schedule setup currently require the documented SQL or the API.
+  management UI and business settings UI are not implemented.
+- The app is served from the workers.dev hostname; no custom domain is attached.
 - Per-isolate rate limiting is best effort and not a durable, global limiter.
 - Worker error logs redact the guest token from the path. Cloudflare's own request
   logs and `wrangler tail` still show the requested URL, so treat tail output as
@@ -201,5 +218,7 @@ Checks:
 - There is no automated accessibility or end-to-end browser suite yet; Phase 10
   accessibility checks in `TESTING.md` apply once the client flows use the real
   APIs.
+- Local `wrangler dev` and local D1 commands cannot run on macOS below 13.5
+  because workerd does not support it. Remote D1/deploy operations still work.
 - No backups beyond D1 Time Travel, no staging environment and no uptime
   monitoring are configured.

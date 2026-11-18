@@ -10,13 +10,13 @@ import {
 } from '../http/validation'
 import { requireAuth } from '../auth/middleware'
 import {
-  getDummyPasswordHash,
-  hashPassword,
+  DUMMY_PASSWORD_HASH,
+  passwordNeedsRehash,
   passwordPolicyError,
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
-  verifyPassword,
 } from '../auth/password'
+import { hashPasswordFor, verifyPasswordFor } from '../auth/password-service'
 import { clearRateLimit } from '../auth/rate-limit'
 import { clientIp, enforceRateLimit } from '../http/rate-limit'
 import {
@@ -80,7 +80,7 @@ authRoutes.post('/register', async (c) => {
   }
 
   const now = unixSeconds()
-  const passwordHash = await hashPassword(password)
+  const passwordHash = await hashPasswordFor(c.env, email, password)
 
   let user
   try {
@@ -133,9 +133,15 @@ authRoutes.post('/login', async (c) => {
   enforceRateLimit(c, accountKey, LOGIN_ACCOUNT_LIMIT, LOGIN_WINDOW_MS)
 
   const now = unixSeconds()
-  const user = await new UsersRepository(c.env.DB).findByEmail(email)
-  const storedHash = user?.password_hash ?? (await getDummyPasswordHash())
-  const passwordMatches = await verifyPassword(password, storedHash)
+  const users = new UsersRepository(c.env.DB)
+  const user = await users.findByEmail(email)
+  const storedHash = user?.password_hash ?? DUMMY_PASSWORD_HASH
+  const passwordMatches = await verifyPasswordFor(
+    c.env,
+    email,
+    password,
+    storedHash,
+  )
   const temporaryPasswordExpired =
     user !== null &&
     user.must_change_password === 1 &&
@@ -158,6 +164,24 @@ authRoutes.post('/login', async (c) => {
   }
 
   clearRateLimit(accountKey)
+
+  // Upgrade hashes created with older parameters (for example the 5,000
+  // iteration bootstrap hash) without requiring a password change.
+  if (passwordNeedsRehash(user.password_hash)) {
+    try {
+      await users.updatePasswordHash(
+        user.id,
+        await hashPasswordFor(c.env, user.id, password),
+        now,
+      )
+    } catch (error) {
+      console.error('[auth] password rehash failed', {
+        userId: user.id,
+        name: error instanceof Error ? error.name : 'UnknownError',
+      })
+    }
+  }
+
   await issueSession(c, user.id, now)
   return c.json({ data: toAuthUser(user) })
 })
@@ -218,7 +242,14 @@ authRoutes.post('/change-password', requireAuth, async (c) => {
     throw new ApiError(401, 'UNAUTHENTICATED', 'Sign in again to continue.')
   }
 
-  if (!(await verifyPassword(currentPassword, user.password_hash))) {
+  if (
+    !(await verifyPasswordFor(
+      c.env,
+      user.id,
+      currentPassword,
+      user.password_hash,
+    ))
+  ) {
     throw new ApiError(
       401,
       'INVALID_CREDENTIALS',
@@ -228,7 +259,7 @@ authRoutes.post('/change-password', requireAuth, async (c) => {
 
   await users.completePasswordChange(
     user.id,
-    await hashPassword(newPassword),
+    await hashPasswordFor(c.env, user.id, newPassword),
     now,
   )
   await new SessionsRepository(c.env.DB).revokeAllForUserExcept(

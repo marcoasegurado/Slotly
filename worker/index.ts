@@ -2,6 +2,8 @@ import { app } from './app'
 import type { Env } from './env'
 import { deliverPendingEmails } from './services/notifications'
 
+export { PasswordHasher } from './durable-objects/password-hasher'
+
 export default {
   fetch(request, env, ctx) {
     return app.fetch(request, env, ctx)

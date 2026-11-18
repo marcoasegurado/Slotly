@@ -26,7 +26,7 @@ describe('PBKDF2 password hashing', () => {
 
   it('stores a versioned hash and never the plaintext password', () => {
     expect(storedHash).toMatch(
-      /^pbkdf2-sha256\$v1\$210000\$[0-9a-f]{32}\$[0-9a-f]{64}$/,
+      /^pbkdf2-sha256\$v1\$100000\$[0-9a-f]{32}\$[0-9a-f]{64}$/,
     )
     expect(storedHash).not.toContain('correct horse battery staple')
     expect(storedHash.split('$')[2]).toBe(String(PBKDF2_ITERATIONS))
@@ -64,7 +64,7 @@ describe('PBKDF2 password hashing', () => {
     expect(passwordNeedsRehash(storedHash)).toBe(false)
     expect(
       passwordNeedsRehash(
-        storedHash.replace(`$v1$${PBKDF2_ITERATIONS}$`, '$v1$100000$'),
+        storedHash.replace(`$v1$${PBKDF2_ITERATIONS}$`, '$v1$50000$'),
       ),
     ).toBe(true)
     expect(passwordNeedsRehash(storedHash.replace('$v1$', '$v2$'))).toBe(true)

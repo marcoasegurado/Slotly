@@ -12,6 +12,8 @@ npm run db:migrate:local
 npm run db:seed:local
 ```
 
+Local Wrangler commands require workerd, which supports macOS 13.5+ only. On macOS 12.6 these commands fail; remote D1 operations and `wrangler deploy` still work through the API.
+
 Run the API Worker and the Vite client in separate terminals:
 
 ```bash
@@ -40,7 +42,7 @@ curl -i -X POST http://127.0.0.1:8787/api/auth/login \
 
 The Vite proxy preserves the browser origin, so requests from `http://localhost:5173` pass the same check.
 
-> **Deployment check:** PBKDF2 currently uses 210,000 iterations. On the development machine `npm run auth:bench` measured roughly 250–300 ms per hash/verify. That exceeds the CPU budget of the Cloudflare Workers Free plan, so the production plan and hashing parameters must be validated before deployment.
+> **Password hashing:** PBKDF2-HMAC-SHA-256 runs at 100,000 iterations — the maximum workerd accepts — inside a `PasswordHasher` Durable Object, so it fits the Workers Free plan's 10 ms request CPU budget. Older hashes are upgraded on the next successful login.
 
 ## Demo accounts
 
@@ -64,9 +66,9 @@ The project owner plans to deploy the production app on Cloudflare:
 - Hono API running on Cloudflare Workers.
 - Cloudflare D1 for persistence.
 
-Deployment is Phase 10 work and has not happened yet. No Cloudflare resources, billing or production data exist for this project. The current mock is not suitable for production deployment because it keeps data in memory and uses plaintext demo credentials.
+Deployment is Phase 10 work. The Worker, the `slotly` D1 database and the admin bootstrap are live at `https://slotly.marcoeduardo-asegurado.workers.dev`; email delivery is disabled until a verified Resend sender exists. The React client still uses the in-memory mock for booking, customer, staff and admin flows, so the public booking UI is not production-ready yet.
 
-`docs/DEPLOYMENT.md` is the Phase 10 runbook: preflight checks, the PBKDF2 plan decision, production D1 creation and migrations, business settings and first-Admin bootstrap, secrets, deploy, smoke tests, rollback and known limitations. Every remote command remains blocked until the owner approves that exact step.
+`docs/DEPLOYMENT.md` is the Phase 10 runbook: preflight checks, the PBKDF2/CPU decision, D1 migrations, business settings and first-Admin bootstrap, secrets, deploy, smoke tests, rollback and known limitations. Remote changes require approval for that exact step.
 
 ## Implemented flows
 
@@ -79,8 +81,8 @@ Backend foundation (Phase 3):
 
 Authentication and sessions (Phase 4, backend):
 
-- PBKDF2-HMAC-SHA-256 password hashes in a versioned format (`pbkdf2-sha256$v1$<iterations>$<salt>$<hash>`), with an 8–128 character policy.
-- `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` and `POST /api/auth/change-password`.
+- PBKDF2-HMAC-SHA-256 password hashes in a versioned format (`pbkdf2-sha256$v1$<iterations>$<salt>$<hash>`), with an 8–128 character policy. 100,000 iterations is the workerd ceiling; hashing runs in a Durable Object so the Free plan's 10 ms request budget is not exceeded.
+- `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` and `POST /api/auth/change-password`. Legacy hashes are rehashed on successful login.
 - Opaque session tokens in an `HttpOnly`, `SameSite=Lax` cookie; D1 stores only the token's SHA-256 hash. Sessions expire after 7 days and are revoked on logout or password change.
 - Origin-based CSRF protection for mutating requests, role and forced-password-change middleware, generic login failures and best-effort per-isolate login/registration rate limits.
 - Local demo users with hashed passwords. Regenerate them with `npm run auth:hash:demo`; benchmark hashing with `npm run auth:bench`.
@@ -130,12 +132,14 @@ Admin dashboard and reports (Phase 9, backend):
 - CSV cells are RFC 4180 quoted and formula-like values are prefixed with an apostrophe. A single export is capped at 5000 rows and flags truncation; summary counts still cover every matching appointment.
 - All three routes are admin-only. Invalid dates, reversed ranges, unknown statuses or malformed IDs return `422 VALIDATION_ERROR`. No new tables or indexes were required.
 
-Quality and deployment preparation (Phase 10, in progress):
+Quality and deployment preparation (Phase 10, deployed to workers.dev):
 
 - `/cancel/*` is Worker-first so the guest cancellation page is served with `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, `X-Robots-Tag: noindex, nofollow` and `X-Content-Type-Options: nosniff`. Guest tokens are redacted from error-log paths.
 - `public/_headers` adds conservative baseline headers (`X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`) to static pages.
+- Password hashing runs in the `PasswordHasher` Durable Object at the runtime's 100,000-iteration ceiling. This keeps 210k-scale hashing off the request Worker's 10 ms Free-plan CPU budget; legacy weak hashes are rehashed on successful login.
 - `npm run auth:hash:admin` generates a one-time Admin INSERT with a PBKDF2 hash for production bootstrap; the plaintext password is never printed.
-- `docs/DEPLOYMENT.md` documents the approval-gated production runbook. Deployment is still not performed, and the PBKDF2 CPU-limit decision remains unresolved.
+- The Worker is deployed at `https://slotly.marcoeduardo-asegurado.workers.dev` against the `slotly` D1 database. Production has business settings and one admin account; services are empty.
+- Email is disabled (`EMAIL_TRANSPORT=none`) until a verified Resend domain and `RESEND_API_KEY` exist; no outbox rows are delivered yet.
 - Client integration and the UI accessibility/responsive checks are still deferred because the React flows remain mock-backed.
 
 Mock UI (still in memory):
@@ -159,7 +163,8 @@ Deferred: admin workspace UI, admin-issued staff passwords/forced password chang
 - `docs/` — on-demand references: `API.md` (routes and contracts), `DATABASE.md` (schema and concurrency), `TESTING.md` (test matrix), `DEPLOYMENT.md` (Phase 10 runbook) and `UI_DESIGN.md` (Figma direction, tokens, states).
 - `worker/` — Hono app, auth/public/staff/admin routes, middleware, error envelope, availability engine and typed D1 repositories.
 - `worker/email/` — email event contract, HTML/text templates and the console/Resend/no-op transports.
-- `worker/auth/` — password hashing, session cookies, role middleware and rate limiting.
+- `worker/auth/` — password hashing and the Durable Object-backed hashing service, session cookies, role middleware and rate limiting.
+- `worker/durable-objects/` — `PasswordHasher`, which runs PBKDF2 outside the request Worker's CPU budget.
 - `worker/repositories/` — typed D1 access for users, sessions, services, schedules, business settings, bookings, managed appointments, notification outbox, audit logs and report aggregates.
 - `worker/services/` — availability calculation, schedule validation, availability-context loading, booking/token lifecycle, staff/admin appointment management, email dispatch/retry and dashboard/report generation.
 - `worker/lib/` — timezone/date helpers, reference and token encoding, password hashing, log-path redaction and RFC 4180 CSV escaping.

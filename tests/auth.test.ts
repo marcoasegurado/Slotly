@@ -1,3 +1,4 @@
+import { pbkdf2Sync, randomBytes } from 'node:crypto'
 import { Hono } from 'hono'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { app, createApp } from '../worker/app'
@@ -246,6 +247,27 @@ describe('POST /api/auth/login', () => {
 
     expect(response.status).toBe(200)
     expect(setCookieHeader(response)).toContain('Secure')
+  })
+
+  it('upgrades a legacy weak hash on successful login', async () => {
+    const salt = randomBytes(16)
+    const derived = pbkdf2Sync(DEMO_PASSWORD, salt, 5_000, 32, 'sha256')
+    const legacyHash = `pbkdf2-sha256$v1$5000$${salt.toString('hex')}$${derived.toString('hex')}`
+
+    db.raw
+      .prepare('UPDATE users SET password_hash = ? WHERE email = ?')
+      .run(legacyHash, 'maria@example.com')
+
+    const response = await login(db, 'maria@example.com')
+    expect(response.status).toBe(200)
+
+    const row = db.raw
+      .prepare('SELECT password_hash FROM users WHERE email = ?')
+      .get('maria@example.com') as { password_hash: string }
+    expect(row.password_hash).toMatch(/^pbkdf2-sha256\$v1\$100000\$/)
+    await expect(verifyPassword(DEMO_PASSWORD, row.password_hash)).resolves.toBe(
+      true,
+    )
   })
 
   it('gives one generic response for a wrong password or unknown email', async () => {
